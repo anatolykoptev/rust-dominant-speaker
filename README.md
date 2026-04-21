@@ -52,11 +52,13 @@ assert_eq!(detector.current_dominant(), Some(1));
 
 ## Algorithm
 
-Three time-scale comparison (Volfin & Cohen, IEEE IEEEI 2012): audio levels are
+Three time-scale comparison ([Volfin & Cohen, 2012][paper]): audio levels are
 bucketed into immediate (20ms), medium (200ms), and long (2s) windows. For each
 window, a binomial-coefficient activity score is computed. A challenger beats the
 incumbent only if their log-ratio exceeds all three thresholds simultaneously,
 preventing brief spikes from triggering spurious speaker changes (hysteresis).
+
+[paper]: https://israelcohen.com/wp-content/uploads/2018/05/IEEEI2012_Volfin.pdf
 
 ### Constants (mediasoup production tuning)
 
@@ -84,7 +86,7 @@ preventing brief spikes from triggering spurious speaker changes (hysteresis).
 - **Jitsi (Java, Apache-2.0)** — reference algorithm implementation.
   [DominantSpeakerIdentification.java](https://github.com/jitsi/jitsi-utils/blob/master/src/main/java/org/jitsi/utils/dsi/DominantSpeakerIdentification.java)
 - **Signal-Calling-Service (Rust, AGPL-3.0)** — a simplified heuristic variant inlined in their backend; not a library.
-  [signal-calling-service](https://github.com/signalapp/Signal-Calling-Service)
+  [backend/src/audio.rs](https://github.com/signalapp/Signal-Calling-Service/blob/main/backend/src/audio.rs)
 - **RFC 6464** — input format: audio level in dBov carried in RTP header extensions.
 
 ## Extracted from

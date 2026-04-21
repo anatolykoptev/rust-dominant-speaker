@@ -40,6 +40,8 @@
 //! See the [README](https://github.com/anatolykoptev/rust-dominant-speaker)
 //! for algorithm details, constants reference, and prior art.
 
+#![forbid(unsafe_code)]
+
 mod detector;
 mod numerics;
 mod speaker;
