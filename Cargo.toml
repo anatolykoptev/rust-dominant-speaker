@@ -1,0 +1,19 @@
+[package]
+name = "rust-dominant-speaker"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+license = "MIT OR Apache-2.0"
+description = "Pure-Rust port of the Jitsi/mediasoup dominant speaker identification algorithm (Volfin/Cohen 2012)."
+repository = "https://github.com/anatolykoptev/rust-dominant-speaker"
+homepage = "https://github.com/anatolykoptev/rust-dominant-speaker"
+documentation = "https://docs.rs/rust-dominant-speaker"
+readme = "README.md"
+keywords = ["webrtc", "sfu", "audio", "speaker", "jitsi"]
+categories = ["multimedia::audio", "algorithms"]
+
+[lib]
+name = "dominant_speaker"
+path = "src/lib.rs"
+
+[dependencies]
