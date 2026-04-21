@@ -1,8 +1,10 @@
 # rust-dominant-speaker
 
 [![CI](https://github.com/anatolykoptev/rust-dominant-speaker/actions/workflows/ci.yml/badge.svg)](https://github.com/anatolykoptev/rust-dominant-speaker/actions/workflows/ci.yml)
+[![Crates.io](https://img.shields.io/crates/v/rust-dominant-speaker.svg)](https://crates.io/crates/rust-dominant-speaker)
 [![docs.rs](https://docs.rs/rust-dominant-speaker/badge.svg)](https://docs.rs/rust-dominant-speaker)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](LICENSE-MIT)
+[![MSRV](https://img.shields.io/badge/MSRV-1.75-blue.svg)](#rust-version)
 
 Pure-Rust library implementing the dominant speaker identification algorithm
 used by Jitsi Videobridge and mediasoup. No FFI, no WebRTC stack dependencies —
