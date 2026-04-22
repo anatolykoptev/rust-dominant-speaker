@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1] — 2026-04-22
+
+### Added
+
+- `DetectorConfig` struct — exposes Volfin & Cohen algorithm constants
+  (C1/C2/C3, N1/N2/N3, `tick_interval`) with mediasoup production defaults.
+- `ActiveSpeakerDetector::with_config(DetectorConfig)` constructor for custom tuning.
+- `ActiveSpeakerDetector::config()` accessor returning `&DetectorConfig`.
+- Backwards compatible: `ActiveSpeakerDetector::new()` unchanged.
+
 ## [0.1.0] — 2026-04-21
 
 ### Added
