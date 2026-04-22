@@ -13,7 +13,7 @@ use std::collections::BTreeMap;
 use std::time::Instant;
 
 use super::speaker::Speaker;
-use super::{C1, C2, C3, LEVEL_IDLE_TIMEOUT_MS, MAX_LEVEL, MIN_LEVEL, SPEAKER_IDLE_TIMEOUT_MS};
+use super::{DetectorConfig, LEVEL_IDLE_TIMEOUT_MS, MAX_LEVEL, MIN_LEVEL, SPEAKER_IDLE_TIMEOUT_MS};
 
 #[cfg(test)]
 mod tests;
@@ -28,17 +28,41 @@ mod tests;
 /// the internal election is deterministic — mediasoup's C++ impl uses
 /// `std::map`, which is also ordered. The number of peers per room is
 /// small (tens), so the O(log n) cost is negligible.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct ActiveSpeakerDetector {
+    config: DetectorConfig,
     speakers: BTreeMap<u64, Speaker>,
     current_dominant: Option<u64>,
     last_level_idle_time: Option<Instant>,
 }
 
+impl Default for ActiveSpeakerDetector {
+    fn default() -> Self {
+        Self::with_config(DetectorConfig::default())
+    }
+}
+
 impl ActiveSpeakerDetector {
-    /// Create a new empty detector.
+    /// Create a new empty detector with default (mediasoup-identical) constants.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Create a detector with custom tuning constants.
+    ///
+    /// See [`DetectorConfig`] for available parameters and their defaults.
+    pub fn with_config(config: DetectorConfig) -> Self {
+        Self {
+            config,
+            speakers: BTreeMap::new(),
+            current_dominant: None,
+            last_level_idle_time: None,
+        }
+    }
+
+    /// Return the active detector configuration.
+    pub fn config(&self) -> &DetectorConfig {
+        &self.config
     }
 
     /// Register a peer. Idempotent — calling again for an existing peer is a no-op.
@@ -121,13 +145,13 @@ impl ActiveSpeakerDetector {
             // activity will overwrite via the ratio test below.
             let seed = incumbent.or_else(|| self.speakers.keys().next().copied())?;
             if let Some(s) = self.speakers.get_mut(&seed) {
-                s.eval_scores();
+                s.eval_scores(self.config.n1, self.config.n2, self.config.n3);
             }
             let dom = {
                 let s = self.speakers.get(&seed)?;
                 [s.score(0), s.score(1), s.score(2)]
             };
-            let mut best_c2 = C2;
+            let mut best_c2 = self.config.c2;
             let mut winner: Option<u64> = if incumbent.is_none() {
                 Some(seed)
             } else {
@@ -144,11 +168,12 @@ impl ActiveSpeakerDetector {
                 if sp.paused {
                     continue;
                 }
-                sp.eval_scores();
+                sp.eval_scores(self.config.n1, self.config.n2, self.config.n3);
                 let c1 = (sp.score(0) / dom[0]).ln();
                 let c2 = (sp.score(1) / dom[1]).ln();
                 let c3 = (sp.score(2) / dom[2]).ln();
-                if c1 > C1 && c2 > C2 && c3 > C3 && c2 > best_c2 {
+                if c1 > self.config.c1 && c2 > self.config.c2 && c3 > self.config.c3 && c2 > best_c2
+                {
                     best_c2 = c2;
                     winner = Some(id);
                 }

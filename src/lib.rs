@@ -48,6 +48,64 @@ mod speaker;
 
 pub use detector::ActiveSpeakerDetector;
 
+/// Tunable constants for the dominant-speaker election.
+///
+/// Defaults match mediasoup's production constants exactly.
+///
+/// # Example
+///
+/// ```rust
+/// use dominant_speaker::{ActiveSpeakerDetector, DetectorConfig};
+/// use std::time::Duration;
+///
+/// // Use defaults (mediasoup-identical behaviour).
+/// let default_detector = ActiveSpeakerDetector::new();
+///
+/// // Raise C1/C2 for a low-bitrate / mobile deployment: fewer speaker switches.
+/// let config = DetectorConfig {
+///     c1: 5.0,
+///     c2: 4.0,
+///     tick_interval: Duration::from_millis(500),
+///     ..DetectorConfig::default()
+/// };
+/// let tuned_detector = ActiveSpeakerDetector::with_config(config);
+/// ```
+#[derive(Debug, Clone)]
+pub struct DetectorConfig {
+    /// Immediate-window log-ratio threshold (mediasoup: C1).
+    pub c1: f64,
+    /// Medium-window log-ratio threshold (mediasoup: C2).
+    pub c2: f64,
+    /// Long-window log-ratio threshold; zero = long window disabled (mediasoup: C3).
+    pub c3: f64,
+    /// Evaluation cadence. Recommend 300 ms.
+    pub tick_interval: std::time::Duration,
+    /// Immediate-window subband count (mediasoup: N1).
+    ///
+    /// Note: changing `n1` without adjusting `SUBUNIT_LENGTH_N1` may produce
+    /// out-of-range subband indices. The default of 13 is coherent with the
+    /// internal buffer layout.
+    pub n1: u8,
+    /// Medium-window subband count (mediasoup: N2).
+    pub n2: u8,
+    /// Long-window subband count (mediasoup: N3).
+    pub n3: u8,
+}
+
+impl Default for DetectorConfig {
+    fn default() -> Self {
+        Self {
+            c1: C1,
+            c2: C2,
+            c3: C3,
+            tick_interval: TICK_INTERVAL,
+            n1: N1 as u8,
+            n2: N2 as u8,
+            n3: N3 as u8,
+        }
+    }
+}
+
 // Algorithm constants — ported verbatim from mediasoup's ActiveSpeakerObserver.
 // `pub(crate)` so sibling modules can share them without exposing to users.
 

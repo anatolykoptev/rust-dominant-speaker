@@ -11,8 +11,8 @@ use std::time::Instant;
 use super::numerics::{compute_activity_score, compute_bigs};
 use super::{
     IMMEDIATE_BUFF_LEN, LEVELS_BUFF_LEN, LONGS_BUFF_LEN, LONG_THRESHOLD, MAX_LEVEL,
-    MEDIUMS_BUFF_LEN, MEDIUM_THRESHOLD, MIN_ACTIVITY_SCORE, MIN_LEVEL, MIN_LEVEL_WINDOW_LEN, N1,
-    N2, N3, SUBUNIT_LENGTH_N1,
+    MEDIUMS_BUFF_LEN, MEDIUM_THRESHOLD, MIN_ACTIVITY_SCORE, MIN_LEVEL, MIN_LEVEL_WINDOW_LEN,
+    SUBUNIT_LENGTH_N1,
 };
 
 /// Per-peer audio state tracked by the detector.
@@ -146,20 +146,20 @@ impl Speaker {
     /// avoids redundant log/binomial work for silent peers.
     ///
     /// Port of mediasoup C++ `EvalActivityScores`.
-    pub(crate) fn eval_scores(&mut self) {
+    pub(crate) fn eval_scores(&mut self, n1: u8, n2: u8, n3: u8) {
         if !self.compute_immediates() {
             return;
         }
-        self.immediate_score = compute_activity_score(self.immediates[0], N1, 0.5, 0.78);
+        self.immediate_score = compute_activity_score(self.immediates[0], u32::from(n1), 0.5, 0.78);
         let imm = self.immediates;
         if !compute_bigs(&imm, &mut self.mediums, MEDIUM_THRESHOLD) {
             return;
         }
-        self.medium_score = compute_activity_score(self.mediums[0], N2, 0.5, 24.0);
+        self.medium_score = compute_activity_score(self.mediums[0], u32::from(n2), 0.5, 24.0);
         let med = self.mediums;
         if !compute_bigs(&med, &mut self.longs, LONG_THRESHOLD) {
             return;
         }
-        self.long_score = compute_activity_score(self.longs[0], N3, 0.5, 47.0);
+        self.long_score = compute_activity_score(self.longs[0], u32::from(n3), 0.5, 47.0);
     }
 }
