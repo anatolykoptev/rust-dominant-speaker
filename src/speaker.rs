@@ -6,8 +6,6 @@
 //! room-level log-ratio hysteresis test in
 //! [`ActiveSpeakerDetector::tick`](crate::ActiveSpeakerDetector::tick).
 
-use std::time::Instant;
-
 use super::numerics::{compute_activity_score, compute_bigs};
 use super::{
     IMMEDIATE_BUFF_LEN, LEVELS_BUFF_LEN, LONGS_BUFF_LEN, LONG_THRESHOLD, MAX_LEVEL,
@@ -21,7 +19,7 @@ pub(crate) struct Speaker {
     pub(crate) immediate_score: f64,
     pub(crate) medium_score: f64,
     pub(crate) long_score: f64,
-    pub(crate) last_level_change: Instant,
+    pub(crate) last_level_change_ms: u64,
     min_level: u8,
     next_min_level: u8,
     next_min_level_window_len: u32,
@@ -33,14 +31,14 @@ pub(crate) struct Speaker {
 }
 
 impl Speaker {
-    /// Create a new speaker state anchored at `now`.
-    pub(crate) fn new(now: Instant) -> Self {
+    /// Create a new speaker state anchored at `now_ms` (milliseconds).
+    pub(crate) fn new(now_ms: u64) -> Self {
         Self {
             paused: false,
             immediate_score: MIN_ACTIVITY_SCORE,
             medium_score: MIN_ACTIVITY_SCORE,
             long_score: MIN_ACTIVITY_SCORE,
-            last_level_change: now,
+            last_level_change_ms: now_ms,
             min_level: MIN_LEVEL,
             next_min_level: MIN_LEVEL,
             next_min_level_window_len: 0,
@@ -76,12 +74,12 @@ impl Speaker {
     /// Gaps longer than 20ms are filled by replaying the sample.
     ///
     /// Port of mediasoup C++ `LevelChanged`.
-    pub(crate) fn level_changed(&mut self, level: u8, now: Instant) {
-        if now < self.last_level_change {
+    pub(crate) fn level_changed(&mut self, level: u8, now_ms: u64) {
+        if now_ms < self.last_level_change_ms {
             return;
         }
-        let elapsed_ms = now.duration_since(self.last_level_change).as_millis() as u64;
-        self.last_level_change = now;
+        let elapsed_ms = now_ms.saturating_sub(self.last_level_change_ms);
+        self.last_level_change_ms = now_ms;
         let b = level.min(MAX_LEVEL);
         // 20ms cadence expected; replay sample on longer gaps, cap at buf len.
         let n = ((elapsed_ms / 20).max(1) as usize).min(LEVELS_BUFF_LEN);
