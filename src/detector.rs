@@ -13,7 +13,6 @@
 
 use std::collections::HashMap;
 use std::hash::Hash;
-use std::time::Instant;
 
 use super::speaker::Speaker;
 use super::{
@@ -40,7 +39,7 @@ pub struct ActiveSpeakerDetector<PeerId = u64> {
     config: DetectorConfig,
     speakers: HashMap<PeerId, Speaker>,
     current_dominant: Option<PeerId>,
-    last_level_idle_time: Option<Instant>,
+    last_level_idle_time: Option<u64>,
 }
 
 impl<PeerId> Default for ActiveSpeakerDetector<PeerId>
@@ -79,10 +78,10 @@ where
     }
 
     /// Register a peer. Idempotent — calling again for an existing peer is a no-op.
-    pub fn add_peer(&mut self, peer_id: PeerId, now: Instant) {
+    pub fn add_peer(&mut self, peer_id: PeerId, now_ms: u64) {
         self.speakers
             .entry(peer_id)
-            .or_insert_with(|| Speaker::new(now));
+            .or_insert_with(|| Speaker::new(now_ms));
     }
 
     /// Remove a peer. If the removed peer was dominant, dominance is cleared
@@ -102,25 +101,25 @@ where
     ///
     /// If the peer was not previously added via [`add_peer`](Self::add_peer),
     /// it is registered implicitly.
-    pub fn record_level(&mut self, peer_id: PeerId, level_raw: u8, now: Instant) {
+    pub fn record_level(&mut self, peer_id: PeerId, level_raw: u8, now_ms: u64) {
         let vol = MAX_LEVEL.saturating_sub(level_raw.min(MAX_LEVEL));
         self.speakers
             .entry(peer_id)
-            .or_insert_with(|| Speaker::new(now))
-            .level_changed(vol, now);
+            .or_insert_with(|| Speaker::new(now_ms))
+            .level_changed(vol, now_ms);
     }
 
     /// Replace stale level entries with silence for idle peers.
     ///
     /// Port of mediasoup C++ `TimeoutIdleLevels`.
-    fn timeout_idle_levels(&mut self, now: Instant) {
+    fn timeout_idle_levels(&mut self, now_ms: u64) {
         let dom = self.current_dominant.clone();
         for (id, sp) in self.speakers.iter_mut() {
-            let idle = now.duration_since(sp.last_level_change).as_millis() as u64;
+            let idle = now_ms.saturating_sub(sp.last_level_change_ms);
             if SPEAKER_IDLE_TIMEOUT_MS < idle && dom.as_ref() != Some(id) {
                 sp.paused = true;
             } else if LEVEL_IDLE_TIMEOUT_MS < idle {
-                sp.level_changed(MIN_LEVEL, now);
+                sp.level_changed(MIN_LEVEL, now_ms);
             }
         }
     }
@@ -129,13 +128,13 @@ where
     ///
     /// Returns `Some(SpeakerChange)` when the dominant speaker changes; `None`
     /// when the incumbent holds. Call on a [`TICK_INTERVAL`](crate::TICK_INTERVAL) timer.
-    pub fn tick(&mut self, now: Instant) -> Option<SpeakerChange<PeerId>> {
+    pub fn tick(&mut self, now_ms: u64) -> Option<SpeakerChange<PeerId>> {
         match self.last_level_idle_time {
-            Some(t) if now.duration_since(t).as_millis() as u64 >= LEVEL_IDLE_TIMEOUT_MS => {
-                self.timeout_idle_levels(now);
-                self.last_level_idle_time = Some(now);
+            Some(t) if now_ms.saturating_sub(t) >= LEVEL_IDLE_TIMEOUT_MS => {
+                self.timeout_idle_levels(now_ms);
+                self.last_level_idle_time = Some(now_ms);
             }
-            None => self.last_level_idle_time = Some(now),
+            None => self.last_level_idle_time = Some(now_ms),
             _ => {}
         }
         if self.speakers.is_empty() {
