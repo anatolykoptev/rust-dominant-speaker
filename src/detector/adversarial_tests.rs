@@ -6,7 +6,9 @@
 
 use super::*;
 use crate::DetectorConfig;
-use std::time::Duration;
+
+#[cfg(test)]
+use std::eprintln;
 
 // ---------------------------------------------------------------------------
 // 1. Numeric / math invariants (via the public detector surface).
@@ -23,17 +25,16 @@ fn n1_equals_1_detector_functions() {
         ..DetectorConfig::default()
     };
     let mut d: ActiveSpeakerDetector<u64> = ActiveSpeakerDetector::with_config(config);
-    let t0 = Instant::now();
-    d.add_peer(1, t0);
-    d.add_peer(2, t0);
+    d.add_peer(1, 0);
+    d.add_peer(2, 0);
     // Feed normal signals — must not panic.
     for i in 0..100 {
-        let t = t0 + Duration::from_millis(i * 20);
+        let t: u64 = i * 20;
         d.record_level(1, 5, t);
         d.record_level(2, 127, t);
     }
     // Tick should succeed (returns Some or None, but must not panic).
-    let _ = d.tick(t0 + Duration::from_millis(2000));
+    let _ = d.tick(2000);
 }
 
 /// `subunit_len_for(255)` = ceil(128/255) = 1. Exercise via detector.
@@ -44,16 +45,15 @@ fn n1_equals_255_detector_functions() {
         ..DetectorConfig::default()
     };
     let mut d: ActiveSpeakerDetector<u64> = ActiveSpeakerDetector::with_config(config);
-    let t0 = Instant::now();
-    d.add_peer(1, t0);
-    d.add_peer(2, t0);
+    d.add_peer(1, 0);
+    d.add_peer(2, 0);
     for i in 0..100 {
-        let t = t0 + Duration::from_millis(i * 20);
+        let t: u64 = i * 20;
         d.record_level(1, 5, t);
         d.record_level(2, 127, t);
     }
     // Must not panic. Some election may occur; if it does, it must be 1.
-    let change = d.tick(t0 + Duration::from_millis(2000));
+    let change = d.tick(2000);
     if let Some(c) = change {
         assert_eq!(c.peer_id, 1, "loudest must win even with extreme n1");
     }
@@ -119,12 +119,12 @@ fn compute_bigs_empty_bigs_is_internal_only() {
 // 2. Detector invariants.
 // ---------------------------------------------------------------------------
 
-fn feed(d: &mut ActiveSpeakerDetector, p: u64, lvl: u8, from: Instant, ms: u64) {
-    let mut t = from;
-    let end = from + Duration::from_millis(ms);
+fn feed(d: &mut ActiveSpeakerDetector, p: u64, lvl: u8, from_ms: u64, ms: u64) {
+    let mut t = from_ms;
+    let end = from_ms + ms;
     while t < end {
         d.record_level(p, lvl, t);
-        t += Duration::from_millis(20);
+        t += 20;
     }
 }
 
@@ -133,18 +133,17 @@ fn feed(d: &mut ActiveSpeakerDetector, p: u64, lvl: u8, from: Instant, ms: u64) 
 #[test]
 fn score_monotonicity_louder_peer_always_ranks_higher() {
     let mut d = ActiveSpeakerDetector::new();
-    let t0 = Instant::now();
-    d.add_peer(1, t0);
-    d.add_peer(2, t0);
+    d.add_peer(1, 0);
+    d.add_peer(2, 0);
 
     // Feed loud peer 1, quiet peer 2 for multiple ticks, verifying ranking.
-    let mut t = t0;
+    let mut t: u64 = 0;
     let mut inversions = 0;
     for tick_i in 0..10 {
         for _ in 0..15 {
             d.record_level(1, 5, t); // loud
             d.record_level(2, 80, t); // quiet but not silent
-            t += Duration::from_millis(20);
+            t += 20;
         }
         d.tick(t);
         let top = d.current_top_k(2);
@@ -164,18 +163,17 @@ fn score_monotonicity_louder_peer_always_ranks_higher() {
 #[test]
 fn dominance_stable_across_quiet_ticks() {
     let mut d = ActiveSpeakerDetector::new();
-    let t0 = Instant::now();
-    d.add_peer(1, t0);
-    d.add_peer(2, t0);
-    feed(&mut d, 1, 5, t0, 2000);
-    feed(&mut d, 2, 127, t0, 2000);
-    let change = d.tick(t0 + Duration::from_millis(2050));
+    d.add_peer(1, 0);
+    d.add_peer(2, 0);
+    feed(&mut d, 1, 5, 0, 2000);
+    feed(&mut d, 2, 127, 0, 2000);
+    let change = d.tick(2050);
     assert_eq!(change.map(|c| c.peer_id), Some(1));
 
     // Multiple silent ticks — incumbent must hold.
-    let mut t = t0 + Duration::from_millis(2050);
+    let mut t: u64 = 2050;
     for i in 0..5 {
-        t += Duration::from_millis(300);
+        t += 300;
         let out = d.tick(t);
         assert!(
             out.is_none(),
@@ -189,9 +187,8 @@ fn dominance_stable_across_quiet_ticks() {
 #[test]
 fn remove_nonexistent_peer_is_noop() {
     let mut d = ActiveSpeakerDetector::new();
-    let t0 = Instant::now();
-    d.add_peer(1, t0);
-    d.add_peer(2, t0);
+    d.add_peer(1, 0);
+    d.add_peer(2, 0);
     // Should not panic.
     d.remove_peer(&999);
     // Both peers must still be present.
@@ -204,11 +201,10 @@ fn remove_nonexistent_peer_is_noop() {
 #[test]
 fn record_level_auto_registers_peer() {
     let mut d = ActiveSpeakerDetector::new();
-    let t0 = Instant::now();
-    d.add_peer(1, t0);
-    feed(&mut d, 1, 127, t0, 2000); // silent
-    feed(&mut d, 99, 5, t0, 2000); // loud; auto-registers
-    let change = d.tick(t0 + Duration::from_millis(2050));
+    d.add_peer(1, 0);
+    feed(&mut d, 1, 127, 0, 2000); // silent
+    feed(&mut d, 99, 5, 0, 2000); // loud; auto-registers
+    let change = d.tick(2050);
     // peer 99 must be elected since it was the only loud one.
     assert_eq!(
         change.map(|c| c.peer_id),
@@ -224,16 +220,16 @@ fn record_level_auto_registers_peer() {
     assert!(ids.contains(&99));
 }
 
-/// Time going backwards (tick with earlier Instant) must not panic.
+/// Time going backwards (tick with earlier timestamp) must not panic.
 #[test]
 fn tick_with_earlier_time_does_not_panic() {
     let mut d = ActiveSpeakerDetector::new();
-    let t0 = Instant::now() + Duration::from_secs(10); // anchor in the future
+    let t0: u64 = 10_000; // 10 seconds in ms as anchor
     d.add_peer(1, t0);
     d.add_peer(2, t0);
     d.tick(t0);
     // Earlier tick. Should be a graceful no-op, or at least not panic.
-    let earlier = t0 - Duration::from_millis(100);
+    let earlier = t0 - 100;
     let result = std::panic::AssertUnwindSafe(|| d.tick(earlier));
     // Must not panic.
     let _ = result();
@@ -245,13 +241,13 @@ fn tick_with_earlier_time_does_not_panic() {
 #[test]
 fn record_level_with_earlier_time_does_not_panic() {
     let mut d = ActiveSpeakerDetector::new();
-    let t0 = Instant::now() + Duration::from_secs(10);
+    let t0: u64 = 10_000; // 10 seconds in ms as anchor
     d.add_peer(1, t0);
-    d.record_level(1, 5, t0 + Duration::from_millis(100));
+    d.record_level(1, 5, t0 + 100);
     // Backwards in time:
     d.record_level(1, 5, t0);
     // Detector should still be in a valid state.
-    let _ = d.tick(t0 + Duration::from_millis(200));
+    let _ = d.tick(t0 + 200);
 }
 
 /// Calling `tick` 100 times at 10ms intervals must not panic and must not
@@ -259,18 +255,17 @@ fn record_level_with_earlier_time_does_not_panic() {
 #[test]
 fn rapid_ticks_do_not_flap() {
     let mut d = ActiveSpeakerDetector::new();
-    let t0 = Instant::now();
-    d.add_peer(1, t0);
-    d.add_peer(2, t0);
-    feed(&mut d, 1, 5, t0, 2000);
-    feed(&mut d, 2, 127, t0, 2000);
-    let initial = d.tick(t0 + Duration::from_millis(2050));
+    d.add_peer(1, 0);
+    d.add_peer(2, 0);
+    feed(&mut d, 1, 5, 0, 2000);
+    feed(&mut d, 2, 127, 0, 2000);
+    let initial = d.tick(2050);
     assert_eq!(initial.map(|c| c.peer_id), Some(1));
 
-    let mut t = t0 + Duration::from_millis(2050);
+    let mut t: u64 = 2050;
     let mut flaps = 0;
     for _ in 0..100 {
-        t += Duration::from_millis(10);
+        t += 10;
         if let Some(c) = d.tick(t) {
             flaps += 1;
             eprintln!("unexpected speaker change: {:?}", c);
@@ -285,15 +280,14 @@ fn rapid_ticks_do_not_flap() {
 #[test]
 fn all_peers_silent_bootstrap() {
     let mut d = ActiveSpeakerDetector::new();
-    let t0 = Instant::now();
     for id in 1..=3u64 {
-        d.add_peer(id, t0);
+        d.add_peer(id, 0);
     }
     // All silent.
     for id in 1..=3u64 {
-        feed(&mut d, id, 127, t0, 2000);
+        feed(&mut d, id, 127, 0, 2000);
     }
-    let change = d.tick(t0 + Duration::from_millis(2050));
+    let change = d.tick(2050);
     // Document behavior: bootstrap might elect someone (by tie-breaker) or None.
     // Either is acceptable as long as it doesn't panic and is consistent.
     // Verify current_dominant matches whatever happened.
@@ -310,14 +304,13 @@ fn all_peers_silent_bootstrap() {
 #[test]
 fn all_peers_equal_volume() {
     let mut d = ActiveSpeakerDetector::new();
-    let t0 = Instant::now();
     for id in 1..=4u64 {
-        d.add_peer(id, t0);
+        d.add_peer(id, 0);
     }
     for id in 1..=4u64 {
-        feed(&mut d, id, 10, t0, 2000);
+        feed(&mut d, id, 10, 0, 2000);
     }
-    let change = d.tick(t0 + Duration::from_millis(2050));
+    let change = d.tick(2050);
     // Some peer must be elected — not None (because all have equal activity
     // above zero and there's no incumbent).
     assert!(
@@ -326,7 +319,7 @@ fn all_peers_equal_volume() {
     );
     let first = change.unwrap().peer_id;
     // Subsequent tick without changes must keep the same dominant.
-    let next = d.tick(t0 + Duration::from_millis(2350));
+    let next = d.tick(2350);
     assert!(
         next.is_none(),
         "dominant must remain stable with equal input, got {next:?}"
@@ -344,21 +337,20 @@ fn all_peers_equal_volume() {
 #[test]
 fn single_then_louder_second_peer_wins() {
     let mut d = ActiveSpeakerDetector::new();
-    let t0 = Instant::now();
-    d.add_peer(1, t0);
+    d.add_peer(1, 0);
     // Feed peer 1 signal then long silence to give it a realistic low score.
-    feed(&mut d, 1, 30, t0, 2000);
-    let c = d.tick(t0 + Duration::from_millis(2050));
+    feed(&mut d, 1, 30, 0, 2000);
+    let c = d.tick(2050);
     assert_eq!(c.map(|c| c.peer_id), Some(1));
 
     // Let peer 1 go silent for a while first, so its score decays
     // (avoid a freshly-elected incumbent with near-max medium score).
-    let t_decay = t0 + Duration::from_millis(2050);
+    let t_decay: u64 = 2050;
     feed(&mut d, 1, 127, t_decay, 3000);
     // Several ticks to settle.
     let mut t = t_decay;
     for _ in 0..10 {
-        t += Duration::from_millis(300);
+        t += 300;
         d.tick(t);
     }
 
@@ -370,24 +362,24 @@ fn single_then_louder_second_peer_wins() {
     let t1 = t;
     // First 200ms: "background" with level_raw=80 (volume=47) to anchor min_level low.
     let mut t_feed = t1;
-    let phase1_end = t1 + Duration::from_millis(200);
+    let phase1_end = t1 + 200;
     while t_feed < phase1_end {
         d.record_level(2, 80, t_feed);
         d.record_level(1, 127, t_feed);
-        t_feed += Duration::from_millis(20);
+        t_feed += 20;
     }
     // Then 8000ms loud (level_raw=5, volume=122), well above threshold.
-    let phase2_end = t_feed + Duration::from_millis(8000);
+    let phase2_end = t_feed + 8000;
     while t_feed < phase2_end {
         d.record_level(2, 5, t_feed);
         d.record_level(1, 127, t_feed);
-        t_feed += Duration::from_millis(20);
+        t_feed += 20;
     }
 
     let mut took_over = false;
     let mut t2 = t1;
     for _tick_i in 0..30 {
-        t2 += Duration::from_millis(300);
+        t2 += 300;
         if let Some(ch) = d.tick(t2) {
             if ch.peer_id == 2 {
                 took_over = true;
@@ -407,21 +399,20 @@ fn single_then_louder_second_peer_wins() {
 #[test]
 fn hundred_peer_room_no_panic() {
     let mut d = ActiveSpeakerDetector::new();
-    let t0 = Instant::now();
     for id in 0..100u64 {
-        d.add_peer(id, t0);
+        d.add_peer(id, 0);
     }
-    let mut t = t0;
-    for step in 0..120 {
+    let mut t: u64 = 0;
+    for step in 0..120u64 {
         for id in 0..100u64 {
             // Pseudo-varied level per step/id.
             let lvl = ((id * 7 + step * 13) % 128) as u8;
             d.record_level(id, lvl, t);
         }
-        t += Duration::from_millis(20);
+        t += 20;
     }
     // Tick — must not panic.
-    let _ = d.tick(t + Duration::from_millis(20));
+    let _ = d.tick(t + 20);
     // If we have a winner, it must be a valid registered peer.
     if let Some(dom) = d.current_dominant() {
         assert!(*dom < 100, "dominant {} is not a valid peer id", dom);
@@ -439,10 +430,9 @@ fn extreme_config_all_ones() {
         ..DetectorConfig::default()
     };
     let mut d: ActiveSpeakerDetector<u64> = ActiveSpeakerDetector::with_config(config);
-    let t0 = Instant::now();
-    d.add_peer(1, t0);
+    d.add_peer(1, 0);
     // Single-peer election always succeeds.
-    let c = d.tick(t0 + Duration::from_millis(300));
+    let c = d.tick(300);
     assert_eq!(c.map(|c| c.peer_id), Some(1));
 }
 
@@ -456,16 +446,15 @@ fn extreme_config_small_n2_with_speech_must_not_panic() {
         ..DetectorConfig::default()
     };
     let mut d: ActiveSpeakerDetector<u64> = ActiveSpeakerDetector::with_config(config);
-    let t0 = Instant::now();
-    d.add_peer(1, t0);
-    d.add_peer(2, t0);
+    d.add_peer(1, 0);
+    d.add_peer(2, 0);
     // Dynamic speech-like envelope that exercises min_level adaptation.
-    let mut t = t0;
+    let mut t: u64 = 0;
     for i in 0..300 {
         let lvl = if i % 6 == 0 { 80 } else { 5 };
         d.record_level(1, lvl, t);
         d.record_level(2, 127, t);
-        t += Duration::from_millis(20);
+        t += 20;
     }
     // Must not panic on tick.
     let _ = d.tick(t);
@@ -479,16 +468,15 @@ fn extreme_config_small_n3_must_not_panic() {
         ..DetectorConfig::default()
     };
     let mut d: ActiveSpeakerDetector<u64> = ActiveSpeakerDetector::with_config(config);
-    let t0 = Instant::now();
-    d.add_peer(1, t0);
-    d.add_peer(2, t0);
-    let mut t = t0;
+    d.add_peer(1, 0);
+    d.add_peer(2, 0);
+    let mut t: u64 = 0;
     // Feed enough to fill the long window (~20s with 20ms samples).
     for i in 0..1500 {
         let lvl = if i % 6 == 0 { 80 } else { 5 };
         d.record_level(1, lvl, t);
         d.record_level(2, 127, t);
-        t += Duration::from_millis(20);
+        t += 20;
     }
     let _ = d.tick(t);
 }
@@ -502,23 +490,21 @@ fn extreme_config_n1_zero_does_not_panic() {
         ..DetectorConfig::default()
     };
     let mut d: ActiveSpeakerDetector<u64> = ActiveSpeakerDetector::with_config(config);
-    let t0 = Instant::now();
-    d.add_peer(1, t0);
-    d.add_peer(2, t0);
-    for i in 0..100 {
-        d.record_level(1, 5, t0 + Duration::from_millis(i * 20));
-        d.record_level(2, 127, t0 + Duration::from_millis(i * 20));
+    d.add_peer(1, 0);
+    d.add_peer(2, 0);
+    for i in 0..100u64 {
+        d.record_level(1, 5, i * 20);
+        d.record_level(2, 127, i * 20);
     }
-    let _ = d.tick(t0 + Duration::from_millis(2000));
+    let _ = d.tick(2000);
 }
 
 /// `current_top_k(0)` must return empty Vec and not panic.
 #[test]
 fn current_top_k_zero_returns_empty() {
     let mut d = ActiveSpeakerDetector::new();
-    let t0 = Instant::now();
-    d.add_peer(1, t0);
-    d.add_peer(2, t0);
+    d.add_peer(1, 0);
+    d.add_peer(2, 0);
     let top = d.current_top_k(0);
     assert!(top.is_empty());
 }
@@ -527,9 +513,8 @@ fn current_top_k_zero_returns_empty() {
 #[test]
 fn peer_scores_before_any_tick() {
     let mut d = ActiveSpeakerDetector::new();
-    let t0 = Instant::now();
-    d.add_peer(1, t0);
-    d.add_peer(2, t0);
+    d.add_peer(1, 0);
+    d.add_peer(2, 0);
     let scores = d.peer_scores();
     assert_eq!(scores.len(), 2);
     for (_, imm, med, lng) in scores {
@@ -544,14 +529,13 @@ fn peer_scores_before_any_tick() {
 #[test]
 fn tick_after_removing_all_peers() {
     let mut d = ActiveSpeakerDetector::new();
-    let t0 = Instant::now();
-    d.add_peer(1, t0);
-    d.add_peer(2, t0);
-    feed(&mut d, 1, 5, t0, 1000);
-    d.tick(t0 + Duration::from_millis(1050));
+    d.add_peer(1, 0);
+    d.add_peer(2, 0);
+    feed(&mut d, 1, 5, 0, 1000);
+    d.tick(1050);
     d.remove_peer(&1);
     d.remove_peer(&2);
-    let c = d.tick(t0 + Duration::from_millis(1350));
+    let c = d.tick(1350);
     assert_eq!(c, None);
     assert_eq!(d.current_dominant(), None);
 }
@@ -561,12 +545,11 @@ fn tick_after_removing_all_peers() {
 #[test]
 fn dominance_clears_on_remove_then_readd() {
     let mut d = ActiveSpeakerDetector::new();
-    let t0 = Instant::now();
-    d.add_peer(1, t0);
-    d.add_peer(2, t0);
-    feed(&mut d, 1, 5, t0, 2000);
-    feed(&mut d, 2, 127, t0, 2000);
-    let c = d.tick(t0 + Duration::from_millis(2050));
+    d.add_peer(1, 0);
+    d.add_peer(2, 0);
+    feed(&mut d, 1, 5, 0, 2000);
+    feed(&mut d, 2, 127, 0, 2000);
+    let c = d.tick(2050);
     assert_eq!(c.map(|c| c.peer_id), Some(1));
     assert_eq!(d.current_dominant(), Some(&1));
 
@@ -574,7 +557,7 @@ fn dominance_clears_on_remove_then_readd() {
     assert_eq!(d.current_dominant(), None, "dominance must clear on remove");
 
     // Re-add peer 1. Dominance must still be None.
-    let t1 = t0 + Duration::from_millis(2100);
+    let t1: u64 = 2100;
     d.add_peer(1, t1);
     assert_eq!(
         d.current_dominant(),
@@ -588,12 +571,11 @@ fn dominance_clears_on_remove_then_readd() {
 #[test]
 fn c2_margin_always_finite_and_nonnegative() {
     let mut d = ActiveSpeakerDetector::new();
-    let t0 = Instant::now();
-    d.add_peer(1, t0);
-    d.add_peer(2, t0);
-    feed(&mut d, 1, 5, t0, 2000);
-    feed(&mut d, 2, 127, t0, 2000);
-    let c = d.tick(t0 + Duration::from_millis(2050)).unwrap();
+    d.add_peer(1, 0);
+    d.add_peer(2, 0);
+    feed(&mut d, 1, 5, 0, 2000);
+    feed(&mut d, 2, 127, 0, 2000);
+    let c = d.tick(2050).unwrap();
     assert!(
         c.c2_margin.is_finite(),
         "c2_margin not finite: {}",
@@ -614,9 +596,8 @@ fn c2_margin_always_finite_and_nonnegative() {
 #[test]
 fn stress_10_peers_1000_ticks() {
     let mut d = ActiveSpeakerDetector::new();
-    let t0 = Instant::now();
     for id in 0..10u64 {
-        d.add_peer(id, t0);
+        d.add_peer(id, 0);
     }
     // Simple deterministic PRNG: LCG.
     let mut state: u64 = 0xDEAD_BEEF;
@@ -627,18 +608,19 @@ fn stress_10_peers_1000_ticks() {
         (state >> 56) as u8
     };
 
-    let mut t = t0;
+    let mut tick_t: u64 = 2000;
     for tick_i in 0..1000 {
         // Feed 10 samples per peer between ticks.
         for _ in 0..10 {
             for id in 0..10u64 {
                 let lvl = next_u8() & 0x7F; // 0..127
-                d.record_level(id, lvl, t);
+                d.record_level(id, lvl, tick_t);
             }
-            t += Duration::from_millis(20);
+            tick_t += 20;
         }
         // Tick must not panic.
-        let _change = d.tick(t);
+        let _change = d.tick(tick_t);
+        tick_t += 300;
         // If dominant exists, must be a valid id.
         if let Some(dom) = d.current_dominant() {
             assert!(*dom < 10, "tick {tick_i}: invalid dominant id {}", *dom);
@@ -666,11 +648,10 @@ fn stress_10_peers_1000_ticks() {
 #[test]
 fn constant_loud_signal_produces_zero_activity_score() {
     let mut d = ActiveSpeakerDetector::new();
-    let t0 = Instant::now();
-    d.add_peer(1, t0);
-    feed(&mut d, 1, 0, t0, 2000); // max volume (level_raw=0), constant
-    d.tick(t0 + Duration::from_millis(2050));
-    d.tick(t0 + Duration::from_millis(2350)); // second tick to settle
+    d.add_peer(1, 0);
+    feed(&mut d, 1, 0, 0, 2000); // max volume (level_raw=0), constant
+    d.tick(2050);
+    d.tick(2350); // second tick to settle
     let scores = d.peer_scores();
     let (_, imm, med, lng) = scores[0];
     assert_eq!(
@@ -691,16 +672,15 @@ fn constant_loud_signal_produces_zero_activity_score() {
 #[test]
 fn current_dominant_always_valid_after_removes() {
     let mut d = ActiveSpeakerDetector::new();
-    let t0 = Instant::now();
     for id in 1..=5u64 {
-        d.add_peer(id, t0);
+        d.add_peer(id, 0);
     }
     // Make peer 3 win.
     for id in 1..=5u64 {
         let lvl = if id == 3 { 5 } else { 127 };
-        feed(&mut d, id, lvl, t0, 2000);
+        feed(&mut d, id, lvl, 0, 2000);
     }
-    let c = d.tick(t0 + Duration::from_millis(2050));
+    let c = d.tick(2050);
     assert_eq!(c.map(|c| c.peer_id), Some(3));
 
     // Remove a non-dominant peer — dominance must persist.
@@ -718,12 +698,11 @@ fn current_dominant_always_valid_after_removes() {
 #[test]
 fn max_volume_produces_finite_scores() {
     let mut d = ActiveSpeakerDetector::new();
-    let t0 = Instant::now();
-    d.add_peer(1, t0);
-    d.add_peer(2, t0);
-    feed(&mut d, 1, 0, t0, 3000); // max volume
-    feed(&mut d, 2, 127, t0, 3000); // silence
-    let _ = d.tick(t0 + Duration::from_millis(3050));
+    d.add_peer(1, 0);
+    d.add_peer(2, 0);
+    feed(&mut d, 1, 0, 0, 3000); // max volume
+    feed(&mut d, 2, 127, 0, 3000); // silence
+    let _ = d.tick(3050);
     for (id, imm, med, lng) in d.peer_scores() {
         assert!(
             imm.is_finite() && med.is_finite() && lng.is_finite(),
@@ -738,17 +717,16 @@ fn max_volume_produces_finite_scores() {
 #[test]
 fn record_level_above_127_is_clamped() {
     let mut d = ActiveSpeakerDetector::new();
-    let t0 = Instant::now();
-    d.add_peer(1, t0);
-    d.add_peer(2, t0);
+    d.add_peer(1, 0);
+    d.add_peer(2, 0);
     // Peer 1: clearly loud. Peer 2: level 255 which should be treated as silence.
-    feed(&mut d, 1, 5, t0, 2000);
-    let mut t = t0;
+    feed(&mut d, 1, 5, 0, 2000);
+    let mut t: u64 = 0;
     for _ in 0..100 {
         d.record_level(2, 255, t);
-        t += Duration::from_millis(20);
+        t += 20;
     }
-    let c = d.tick(t0 + Duration::from_millis(2050));
+    let c = d.tick(2050);
     assert_eq!(
         c.map(|c| c.peer_id),
         Some(1),
@@ -761,12 +739,11 @@ fn record_level_above_127_is_clamped() {
 #[test]
 fn top_k_1_matches_current_dominant() {
     let mut d = ActiveSpeakerDetector::new();
-    let t0 = Instant::now();
     for id in 1..=4u64 {
-        d.add_peer(id, t0);
-        feed(&mut d, id, 20, t0, 2000);
+        d.add_peer(id, 0);
+        feed(&mut d, id, 20, 0, 2000);
     }
-    let c = d.tick(t0 + Duration::from_millis(2050));
+    let c = d.tick(2050);
     let dom = c.map(|c| c.peer_id).expect("some peer must win");
     let top = d.current_top_k(1);
     assert_eq!(top.len(), 1);

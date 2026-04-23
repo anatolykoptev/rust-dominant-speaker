@@ -47,6 +47,9 @@
 
 extern crate alloc;
 
+#[cfg(test)]
+extern crate std;
+
 mod detector;
 mod numerics;
 mod speaker;
