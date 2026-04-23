@@ -175,3 +175,52 @@ fn peer_scores_returns_all_peers() {
         assert!(lng.is_finite() && *lng >= 0.0);
     }
 }
+
+#[test]
+fn remove_dominant_clears_dominance_for_next_tick() {
+    let mut d = ActiveSpeakerDetector::new();
+    let t0 = Instant::now();
+    d.add_peer(1, t0);
+    d.add_peer(2, t0);
+    feed(&mut d, 1, 5, t0, 2000);
+    feed(&mut d, 2, 127, t0, 2000);
+    assert_speaker(d.tick(t0 + Duration::from_millis(2050)), 1);
+    assert_eq!(d.current_dominant(), Some(&1));
+
+    // Remove the dominant speaker.
+    d.remove_peer(&1);
+    assert_eq!(d.current_dominant(), None, "dominance must clear on remove");
+
+    // Next tick with only peer 2 remaining should elect peer 2.
+    assert_speaker(d.tick(t0 + Duration::from_millis(2400)), 2);
+}
+
+#[test]
+fn idle_peer_gets_paused_and_excluded_from_election() {
+    // Verify that a paused peer is skipped in the election loop.
+    // We set paused manually via the speakers_mut() test accessor.
+    let mut d = ActiveSpeakerDetector::new();
+    let t0 = Instant::now();
+    d.add_peer(1, t0);
+    d.add_peer(2, t0);
+    // Make peer 2 loud and peer 1 silent, but then manually pause peer 2.
+    feed(&mut d, 2, 5, t0, 2000);
+    feed(&mut d, 1, 127, t0, 2000);
+    if let Some(sp) = d.speakers_mut().get_mut(&2) {
+        sp.paused = true;
+    }
+    // With peer 2 paused, peer 1 (silent) should become dominant by default.
+    let change = d.tick(t0 + Duration::from_millis(2050));
+    // Either peer 1 is elected or None — but peer 2 must NOT be elected.
+    if let Some(ref c) = change {
+        assert_ne!(c.peer_id, 2, "paused peer must not be elected");
+    }
+}
+
+#[test]
+fn tick_with_no_peers_returns_none() {
+    let mut d: ActiveSpeakerDetector = ActiveSpeakerDetector::new();
+    let t0 = Instant::now();
+    assert_eq!(d.tick(t0 + Duration::from_millis(300)), None);
+    assert_eq!(d.current_dominant(), None);
+}

@@ -281,4 +281,9 @@ where
             .map(|(id, s)| (id.clone(), s.immediate_score, s.medium_score, s.long_score))
             .collect()
     }
+
+    #[cfg(test)]
+    pub(super) fn speakers_mut(&mut self) -> &mut HashMap<PeerId, Speaker> {
+        &mut self.speakers
+    }
 }
