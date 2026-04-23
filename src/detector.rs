@@ -11,8 +11,9 @@
 //! - [`ActiveSpeakerDetector::current_top_k`]
 //! - [`ActiveSpeakerDetector::peer_scores`]
 
-use std::collections::HashMap;
-use std::hash::Hash;
+use alloc::vec::Vec;
+use core::hash::Hash;
+use hashbrown::HashMap;
 
 use super::speaker::Speaker;
 use super::{
@@ -213,9 +214,9 @@ where
                         if sp.paused {
                             continue;
                         }
-                        let c1 = (sp.score(0) / dom[0]).ln();
-                        let c2 = (sp.score(1) / dom[1]).ln();
-                        let c3 = (sp.score(2) / dom[2]).ln();
+                        let c1 = libm::log(sp.score(0) / dom[0]);
+                        let c2 = libm::log(sp.score(1) / dom[1]);
+                        let c3 = libm::log(sp.score(2) / dom[2]);
                         if c1 > self.config.c1
                             && c2 > self.config.c2
                             && c3 > self.config.c3
@@ -269,7 +270,7 @@ where
         // Sort descending: primary key = medium_score, tiebreaker = raw_level_sum.
         scored.sort_by(|a, b| {
             b.1.partial_cmp(&a.1)
-                .unwrap_or(std::cmp::Ordering::Equal)
+                .unwrap_or(core::cmp::Ordering::Equal)
                 .then_with(|| b.2.cmp(&a.2))
         });
         scored

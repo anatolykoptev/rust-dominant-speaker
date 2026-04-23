@@ -40,9 +40,9 @@ pub(crate) fn compute_activity_score(v_l: u8, n_r: u32, p: f64, lambda: f64) -> 
     // to produce v_l > n_r, leading to unsigned underflow in (n_r - v_l).
     let v_l = (v_l as u32).min(n_r);
     let bc = binomial_coefficient(n_r as i32, v_l as i32).max(1) as f64;
-    let s = bc.ln() + (v_l as f64) * p.ln() + ((n_r - v_l) as f64) * (1.0 - p).ln() - lambda.ln()
-        + lambda * (v_l as f64);
-    s.max(MIN_ACTIVITY_SCORE)
+    let s = libm::log(bc) + (v_l as f64) * libm::log(p) + ((n_r - v_l) as f64) * libm::log(1.0 - p)
+        - libm::log(lambda) + lambda * (v_l as f64);
+    if s > MIN_ACTIVITY_SCORE { s } else { MIN_ACTIVITY_SCORE }
 }
 
 /// Downsample a `littles` array into `bigs` by counting samples per bucket

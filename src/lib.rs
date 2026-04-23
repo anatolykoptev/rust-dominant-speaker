@@ -42,7 +42,10 @@
 //! See the [README](https://github.com/anatolykoptev/rust-dominant-speaker)
 //! for algorithm details, constants reference, and prior art.
 
+#![no_std]
 #![forbid(unsafe_code)]
+
+extern crate alloc;
 
 mod detector;
 mod numerics;
@@ -74,7 +77,7 @@ pub type DefaultDetector = ActiveSpeakerDetector<u64>;
 ///
 /// ```rust
 /// use dominant_speaker::{ActiveSpeakerDetector, DetectorConfig};
-/// use std::time::Duration;
+/// use core::time::Duration;
 ///
 /// // Use defaults (mediasoup-identical behaviour).
 /// let default_detector: ActiveSpeakerDetector<u64> = ActiveSpeakerDetector::new();
@@ -113,7 +116,7 @@ pub struct DetectorConfig {
     pub c3: f64,
     /// Evaluation cadence. Recommend 300 ms.
     #[cfg_attr(feature = "serde", serde(with = "duration_ms"))]
-    pub tick_interval: std::time::Duration,
+    pub tick_interval: core::time::Duration,
     /// Immediate-window subband count (mediasoup: N1).
     ///
     /// The subband width is derived automatically via `ceil(128 / n1)`.
@@ -128,7 +131,7 @@ pub struct DetectorConfig {
 #[cfg(feature = "serde")]
 mod duration_ms {
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
-    use std::time::Duration;
+    use core::time::Duration;
 
     pub fn serialize<S: Serializer>(d: &Duration, s: S) -> Result<S::Ok, S::Error> {
         d.as_millis().serialize(s)
@@ -197,7 +200,7 @@ pub(crate) const MIN_ACTIVITY_SCORE: f64 = 1.0e-10;
 /// Recommended tick interval matching mediasoup's production tuning.
 ///
 /// Call [`ActiveSpeakerDetector::tick`] at this cadence for best results.
-pub const TICK_INTERVAL: std::time::Duration = std::time::Duration::from_millis(300);
+pub const TICK_INTERVAL: core::time::Duration = core::time::Duration::from_millis(300);
 
 /// Compute the subband width for a given N1 value.
 ///

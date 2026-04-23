@@ -17,10 +17,13 @@ name = "dominant_speaker"
 path = "src/lib.rs"
 
 [features]
-default = []
+default = ["std"]
+std = []
 serde = ["dep:serde"]
 
 [dependencies]
+hashbrown = { version = "0.15", default-features = false, features = ["inline-more", "default-hasher"] }
+libm = { version = "0.2", default-features = false }
 serde = { version = "1", default-features = false, features = ["derive"], optional = true }
 
 [dev-dependencies]

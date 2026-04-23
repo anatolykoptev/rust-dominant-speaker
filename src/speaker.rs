@@ -108,9 +108,8 @@ impl Speaker {
             self.next_min_level = self.next_min_level.min(level);
             self.next_min_level_window_len += 1;
             if self.next_min_level_window_len >= MIN_LEVEL_WINDOW_LEN {
-                let m = (self.min_level as f64 * self.next_min_level as f64)
-                    .sqrt()
-                    .clamp(MIN_LEVEL as f64, MAX_LEVEL as f64);
+                let raw = libm::sqrt(self.min_level as f64 * self.next_min_level as f64);
+                let m = raw.clamp(MIN_LEVEL as f64, MAX_LEVEL as f64);
                 self.min_level = m as u8;
                 self.next_min_level = MIN_LEVEL;
                 self.next_min_level_window_len = 0;
