@@ -86,7 +86,22 @@ pub type DefaultDetector = ActiveSpeakerDetector<u64>;
 /// };
 /// let tuned_detector: ActiveSpeakerDetector<u64> = ActiveSpeakerDetector::with_config(config);
 /// ```
+///
+/// # Serde
+///
+/// Enable the `serde` feature to serialize/deserialize this struct.
+/// `tick_interval` is serialized as milliseconds (`u64`).
+///
+/// ```rust,ignore
+/// // Requires `dominant_speaker` with `serde` feature and `serde_json` dev-dep.
+/// use dominant_speaker::DetectorConfig;
+/// let config = DetectorConfig::default();
+/// let json = serde_json::to_string(&config).unwrap();
+/// let back: DetectorConfig = serde_json::from_str(&json).unwrap();
+/// assert!((back.c1 - config.c1).abs() < f64::EPSILON);
+/// ```
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct DetectorConfig {
     /// Immediate-window log-ratio threshold (mediasoup: C1).
     pub c1: f64,
@@ -95,6 +110,7 @@ pub struct DetectorConfig {
     /// Long-window log-ratio threshold; zero = long window disabled (mediasoup: C3).
     pub c3: f64,
     /// Evaluation cadence. Recommend 300 ms.
+    #[cfg_attr(feature = "serde", serde(with = "duration_ms"))]
     pub tick_interval: std::time::Duration,
     /// Immediate-window subband count (mediasoup: N1).
     ///
@@ -105,6 +121,21 @@ pub struct DetectorConfig {
     pub n2: u8,
     /// Long-window subband count (mediasoup: N3).
     pub n3: u8,
+}
+
+#[cfg(feature = "serde")]
+mod duration_ms {
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+    use std::time::Duration;
+
+    pub fn serialize<S: Serializer>(d: &Duration, s: S) -> Result<S::Ok, S::Error> {
+        d.as_millis().serialize(s)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Duration, D::Error> {
+        let ms = u64::deserialize(d)?;
+        Ok(Duration::from_millis(ms))
+    }
 }
 
 impl Default for DetectorConfig {

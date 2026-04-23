@@ -16,4 +16,9 @@ categories = ["multimedia::audio", "algorithms"]
 name = "dominant_speaker"
 path = "src/lib.rs"
 
+[features]
+default = []
+serde = ["dep:serde"]
+
 [dependencies]
+serde = { version = "1", default-features = false, features = ["derive"], optional = true }
