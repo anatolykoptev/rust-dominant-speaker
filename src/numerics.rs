@@ -41,7 +41,8 @@ pub(crate) fn compute_activity_score(v_l: u8, n_r: u32, p: f64, lambda: f64) -> 
     let v_l = (v_l as u32).min(n_r);
     let bc = binomial_coefficient(n_r as i32, v_l as i32).max(1) as f64;
     let s = libm::log(bc) + (v_l as f64) * libm::log(p) + ((n_r - v_l) as f64) * libm::log(1.0 - p)
-        - libm::log(lambda) + lambda * (v_l as f64);
+        - libm::log(lambda)
+        + lambda * (v_l as f64);
     s.max(MIN_ACTIVITY_SCORE)
 }
 

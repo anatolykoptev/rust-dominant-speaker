@@ -116,9 +116,7 @@ fn speaker_change_has_nonnegative_margin() {
     d.add_peer(2, 0);
     feed(&mut d, 1, 5, 0, 2000);
     feed(&mut d, 2, 127, 0, 2000);
-    let change = d
-        .tick(2050)
-        .expect("should elect");
+    let change = d.tick(2050).expect("should elect");
     assert_eq!(change.peer_id, 1);
     assert!(
         change.c2_margin >= 0.0,

@@ -133,8 +133,8 @@ pub struct DetectorConfig {
 
 #[cfg(feature = "serde")]
 mod duration_ms {
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
     use core::time::Duration;
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
     pub fn serialize<S: Serializer>(d: &Duration, s: S) -> Result<S::Ok, S::Error> {
         d.as_millis().serialize(s)

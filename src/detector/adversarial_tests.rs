@@ -10,7 +10,6 @@ use crate::DetectorConfig;
 #[cfg(test)]
 use std::eprintln;
 
-
 // ---------------------------------------------------------------------------
 // 1. Numeric / math invariants (via the public detector surface).
 // ---------------------------------------------------------------------------
