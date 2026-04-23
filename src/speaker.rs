@@ -118,6 +118,7 @@ impl Speaker {
     ///
     /// Port of mediasoup C++ `ComputeImmediates`.
     fn compute_immediates(&mut self, subunit_len: u8) -> bool {
+        debug_assert!(subunit_len > 0, "subunit_len must be non-zero");
         let thresh = self.min_level.saturating_add(subunit_len);
         let mut changed = false;
         for i in 0..IMMEDIATE_BUFF_LEN {
