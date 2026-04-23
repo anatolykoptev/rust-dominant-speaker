@@ -243,4 +243,39 @@ where
     pub fn current_dominant(&self) -> Option<&PeerId> {
         self.current_dominant.as_ref()
     }
+
+    /// Return the top `k` speakers by medium-window activity score, highest first.
+    ///
+    /// Paused (idle) peers are excluded. Returns fewer than `k` entries if
+    /// fewer active peers exist. Scores reflect the last [`tick`](Self::tick) call.
+    ///
+    /// Ties in medium score are broken by raw level sum (higher = louder),
+    /// matching the bootstrap-election tiebreaker in [`tick`](Self::tick).
+    pub fn current_top_k(&self, k: usize) -> Vec<PeerId> {
+        let mut scored: Vec<(&PeerId, f64, u32)> = self
+            .speakers
+            .iter()
+            .filter(|(_, s)| !s.paused)
+            .map(|(id, s)| (id, s.medium_score, s.raw_level_sum()))
+            .collect();
+        // Sort descending: primary key = medium_score, tiebreaker = raw_level_sum.
+        scored.sort_by(|a, b| {
+            b.1.partial_cmp(&a.1)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| b.2.cmp(&a.2))
+        });
+        scored.into_iter().take(k).map(|(id, _, _)| id.clone()).collect()
+    }
+
+    /// Return all peers with their current `(peer_id, immediate, medium, long)` scores.
+    ///
+    /// Scores are stale between ticks — call after each [`tick`](Self::tick) for
+    /// current data. Useful for dashboards, custom layer selectors, and debugging.
+    /// Order is unspecified.
+    pub fn peer_scores(&self) -> Vec<(PeerId, f64, f64, f64)> {
+        self.speakers
+            .iter()
+            .map(|(id, s)| (id.clone(), s.immediate_score, s.medium_score, s.long_score))
+            .collect()
+    }
 }

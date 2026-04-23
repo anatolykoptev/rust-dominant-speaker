@@ -127,3 +127,51 @@ fn speaker_change_has_nonnegative_margin() {
     assert_eq!(change.peer_id, 1);
     assert!(change.c2_margin >= 0.0, "margin must be non-negative, got {}", change.c2_margin);
 }
+
+#[test]
+fn top_k_returns_loudest_first() {
+    let mut d = ActiveSpeakerDetector::new();
+    let t0 = Instant::now();
+    d.add_peer(1, t0);
+    d.add_peer(2, t0);
+    d.add_peer(3, t0);
+    feed(&mut d, 1, 5, t0, 2000);   // loudest
+    feed(&mut d, 2, 50, t0, 2000);  // moderate
+    feed(&mut d, 3, 127, t0, 2000); // silent
+    d.tick(t0 + Duration::from_millis(2050));
+    // Second tick to ensure scores are fully settled.
+    d.tick(t0 + Duration::from_millis(2350));
+    let top2 = d.current_top_k(2);
+    assert_eq!(top2.len(), 2);
+    assert_eq!(top2[0], 1, "loudest peer should be first");
+    assert_eq!(top2[1], 2, "moderate peer should be second");
+}
+
+#[test]
+fn top_k_larger_than_peers_returns_all() {
+    let mut d = ActiveSpeakerDetector::new();
+    let t0 = Instant::now();
+    d.add_peer(1, t0);
+    d.add_peer(2, t0);
+    d.tick(t0 + Duration::from_millis(300));
+    let top = d.current_top_k(10);
+    assert_eq!(top.len(), 2);
+}
+
+#[test]
+fn peer_scores_returns_all_peers() {
+    let mut d = ActiveSpeakerDetector::new();
+    let t0 = Instant::now();
+    d.add_peer(1, t0);
+    d.add_peer(2, t0);
+    feed(&mut d, 1, 5, t0, 1000);
+    d.tick(t0 + Duration::from_millis(1050));
+    let scores = d.peer_scores();
+    assert_eq!(scores.len(), 2);
+    // All scores must be finite and non-negative.
+    for (_, imm, med, lng) in &scores {
+        assert!(imm.is_finite() && *imm >= 0.0);
+        assert!(med.is_finite() && *med >= 0.0);
+        assert!(lng.is_finite() && *lng >= 0.0);
+    }
+}
