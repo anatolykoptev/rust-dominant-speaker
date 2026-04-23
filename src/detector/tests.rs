@@ -209,12 +209,8 @@ fn idle_peer_gets_paused_and_excluded_from_election() {
     if let Some(sp) = d.speakers_mut().get_mut(&2) {
         sp.paused = true;
     }
-    // With peer 2 paused, peer 1 (silent) should become dominant by default.
-    let change = d.tick(t0 + Duration::from_millis(2050));
-    // Either peer 1 is elected or None — but peer 2 must NOT be elected.
-    if let Some(ref c) = change {
-        assert_ne!(c.peer_id, 2, "paused peer must not be elected");
-    }
+    // With peer 2 paused, peer 1 is the only eligible candidate and must be elected.
+    assert_speaker(d.tick(t0 + Duration::from_millis(2050)), 1);
 }
 
 #[test]
