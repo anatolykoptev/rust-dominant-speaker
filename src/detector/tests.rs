@@ -57,6 +57,8 @@ fn hysteresis_prevents_brief_flap() {
     assert_eq!(d.tick(t1 + Duration::from_millis(450)), None);
 }
 
+/// Verify that `with_config` stores the config as-is and `new()` uses the
+/// mediasoup defaults (c1=3, c2=2, n1=13).
 #[test]
 fn detector_with_custom_constants_differs_from_default() {
     let config = DetectorConfig {
@@ -92,6 +94,10 @@ fn idle_removal_clears_dominance() {
     assert_eq!(d.tick(t0 + Duration::from_millis(600)), None);
 }
 
+/// Regression for the SUBUNIT_LENGTH_N1 bug: with n1=10 the subunit width
+/// is 13 (not 10), so subband indices stay in 0..9. Without the fix,
+/// activity scores were computed against the wrong subband space and
+/// elections failed to fire.
 #[test]
 fn custom_n1_elects_louder_peer() {
     let config = DetectorConfig {

@@ -177,6 +177,9 @@ where
                         let Some(sp) = self.speakers.get(id) else {
                             continue;
                         };
+                        if sp.paused {
+                            continue;
+                        }
                         let s = sp.score(1);
                         let raw = sp.raw_level_sum();
                         if s > best_score || (s == best_score && raw > best_raw) {
