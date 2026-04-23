@@ -10,6 +10,7 @@ use crate::DetectorConfig;
 #[cfg(test)]
 use std::eprintln;
 
+
 // ---------------------------------------------------------------------------
 // 1. Numeric / math invariants (via the public detector surface).
 // ---------------------------------------------------------------------------
@@ -230,9 +231,8 @@ fn tick_with_earlier_time_does_not_panic() {
     d.tick(t0);
     // Earlier tick. Should be a graceful no-op, or at least not panic.
     let earlier = t0 - 100;
-    let result = std::panic::AssertUnwindSafe(|| d.tick(earlier));
-    // Must not panic.
-    let _ = result();
+    // Must not panic — backwards timestamp is silently ignored.
+    let _ = d.tick(earlier);
 }
 
 /// `record_level` with time going backwards: the speaker's `level_changed`

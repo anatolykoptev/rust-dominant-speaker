@@ -42,7 +42,7 @@ pub(crate) fn compute_activity_score(v_l: u8, n_r: u32, p: f64, lambda: f64) -> 
     let bc = binomial_coefficient(n_r as i32, v_l as i32).max(1) as f64;
     let s = libm::log(bc) + (v_l as f64) * libm::log(p) + ((n_r - v_l) as f64) * libm::log(1.0 - p)
         - libm::log(lambda) + lambda * (v_l as f64);
-    if s > MIN_ACTIVITY_SCORE { s } else { MIN_ACTIVITY_SCORE }
+    s.max(MIN_ACTIVITY_SCORE)
 }
 
 /// Downsample a `littles` array into `bigs` by counting samples per bucket
