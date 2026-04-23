@@ -124,7 +124,7 @@ where
         }
     }
 
-    /// Advance the detector clock to `now`.
+    /// Advance the detector clock to `now_ms` (milliseconds).
     ///
     /// Returns `Some(SpeakerChange)` when the dominant speaker changes; `None`
     /// when the incumbent holds. Call on a [`TICK_INTERVAL`](crate::TICK_INTERVAL) timer.

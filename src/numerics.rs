@@ -2,7 +2,7 @@
 //!
 //! No state — every function is a deterministic mapping of inputs to
 //! outputs, making the algorithm core unit-testable without any
-//! `Instant` / `HashMap` scaffolding.
+//! runtime scaffolding.
 
 use super::MIN_ACTIVITY_SCORE;
 

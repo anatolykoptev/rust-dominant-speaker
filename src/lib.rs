@@ -11,28 +11,30 @@
 //!
 //! # Quick start
 //!
+//! Timestamps are caller-supplied `u64` milliseconds — use any epoch you like
+//! (e.g. `Instant::now().elapsed().as_millis() as u64` in std environments,
+//! or `performance.now() as u64` in a WASM AudioWorklet).
+//!
 //! ```rust
-//! use std::time::{Duration, Instant};
-//! use dominant_speaker::{ActiveSpeakerDetector, TICK_INTERVAL};
+//! use dominant_speaker::ActiveSpeakerDetector;
 //!
 //! let mut detector = ActiveSpeakerDetector::new();
-//! let t0 = Instant::now();
 //!
-//! // Register two participants.
-//! detector.add_peer(1, t0);
-//! detector.add_peer(2, t0);
+//! // Register two participants (timestamp = 0 ms).
+//! detector.add_peer(1u64, 0);
+//! detector.add_peer(2u64, 0);
 //!
 //! // Feed audio levels (0 = loud, 127 = silent, per RFC 6464).
-//! // Simulate peer 1 speaking for 2 seconds.
-//! let mut t = t0;
-//! while t < t0 + Duration::from_millis(2000) {
-//!     detector.record_level(1, 5, t);   // peer 1: active (low dBov = loud)
-//!     detector.record_level(2, 127, t); // peer 2: silent
-//!     t += Duration::from_millis(20);
+//! // Simulate peer 1 speaking for 2 seconds at 20 ms cadence.
+//! let mut t_ms: u64 = 0;
+//! while t_ms < 2000 {
+//!     detector.record_level(1, 5, t_ms);   // peer 1: active
+//!     detector.record_level(2, 127, t_ms); // peer 2: silent
+//!     t_ms += 20;
 //! }
 //!
-//! // Call tick() on a timer — returns Some(SpeakerChange) only on speaker change.
-//! if let Some(change) = detector.tick(t0 + TICK_INTERVAL) {
+//! // Call tick() on a 300 ms timer — returns Some(SpeakerChange) only on change.
+//! if let Some(change) = detector.tick(300) {
 //!     println!("Dominant speaker: peer {}", change.peer_id);
 //! }
 //! ```
