@@ -10,10 +10,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Breaking
 
 - **`add_peer`, `record_level`, and `tick` now accept `u64` milliseconds instead of `std::time::Instant`.**
-  Supply your own epoch-relative timestamp. In std environments:
+  Supply your own epoch-relative timestamp. Migrate:
   ```rust
+  // before (v0.2)
+  let t0 = std::time::Instant::now();
+  detector.add_peer(id, t0);
+  detector.record_level(id, level, t0);
+  detector.tick(t0 + std::time::Duration::from_millis(300));
+
+  // after (v0.3)
   let t0 = std::time::Instant::now();
   let now_ms = || t0.elapsed().as_millis() as u64;
+  detector.add_peer(id, now_ms());
+  detector.record_level(id, level, now_ms());
   detector.tick(now_ms());
   ```
   In WASM AudioWorklets: `performance.now() as u64`.

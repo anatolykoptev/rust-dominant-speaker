@@ -30,17 +30,20 @@ All items originally planned for v0.2 are complete:
 | `binomial_coefficient(n,r)` returned 1 when r > n — fixed, early return | v0.2.1 |
 | `compute_activity_score` unsigned underflow when v_l > n_r — fixed, clamped | v0.2.1 |
 
+## What shipped in v0.3.0
+
+| Item | Released |
+|------|---------|
+| `Instant` → `u64` ms in all public API (`add_peer`, `record_level`, `tick`) | v0.3.0 |
+| `#![no_std]` + `extern crate alloc`; `hashbrown` HashMap; `libm` f64 math | v0.3.0 |
+| `std` feature flag (default on) — reserved for future std-specific paths | v0.3.0 |
+| WASM CI target (`wasm32-unknown-unknown --no-default-features`) | v0.3.0 |
+
 ---
 
-## Executive summary for v0.3
+## Executive summary for v0.4+
 
-1. **`no_std` / WASM unlocks the largest untapped adoption segment.**
-   The only `std` dependency is `Instant`. Replace with caller-supplied `u64` milliseconds;
-   the crate then compiles to `wasm32-unknown-unknown` and can run in a browser AudioWorklet
-   or Insertable Streams worker. No WebRTC competitor offers a WASM-deployable dominant
-   speaker implementation. Medium effort (~1 week), high impact.
-
-2. **`ScoringPolicy` trait unlocks the LiveKit and Chime use cases.**
+1. **`ScoringPolicy` trait unlocks the LiveKit and Chime use cases.**
    Both LiveKit (EMA + percentile noise floor) and Amazon Chime (decay score, pluggable
    policy) use simpler algorithms than Volfin/Cohen. A `ScoringPolicy` trait lets callers
    inject their own scorer while reusing our election / top-K / hysteresis machinery.

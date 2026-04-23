@@ -56,7 +56,4 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
-      - name: Build for WASM (no_std)
-        run: |
-          rustup target add wasm32-unknown-unknown
-          cargo build --target wasm32-unknown-unknown --no-default-features
+      - run: cargo build --target wasm32-unknown-unknown --no-default-features

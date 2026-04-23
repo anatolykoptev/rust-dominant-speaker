@@ -25,26 +25,28 @@ rust-dominant-speaker = "0.3"
 ```
 
 ```rust
-use std::time::{Duration, Instant};
-use dominant_speaker::{ActiveSpeakerDetector, SpeakerChange, TICK_INTERVAL};
+use dominant_speaker::{ActiveSpeakerDetector, SpeakerChange};
 
 let mut detector = ActiveSpeakerDetector::new();
-let t0 = Instant::now();
 
-// Register participants.
-detector.add_peer(1, t0);
-detector.add_peer(2, t0);
+// Timestamps are caller-supplied u64 milliseconds (any epoch).
+// In std: let t0 = Instant::now(); let now_ms = t0.elapsed().as_millis() as u64;
+// In WASM: performance.now() as u64
+
+// Register participants at t=0.
+detector.add_peer(1u64, 0);
+detector.add_peer(2u64, 0);
 
 // Feed RFC 6464 audio levels: 0 = loudest, 127 = silent.
-let mut t = t0;
-while t < t0 + Duration::from_millis(2000) {
-    detector.record_level(1, 5, t);    // peer 1 is speaking
-    detector.record_level(2, 127, t);  // peer 2 is silent
-    t += Duration::from_millis(20);
+let mut t_ms: u64 = 0;
+while t_ms < 2000 {
+    detector.record_level(1, 5, t_ms);    // peer 1 is speaking
+    detector.record_level(2, 127, t_ms);  // peer 2 is silent
+    t_ms += 20;
 }
 
-// Call tick() on a timer. Returns Some(SpeakerChange) only on speaker change.
-if let Some(change) = detector.tick(t0 + TICK_INTERVAL) {
+// Call tick() on a 300ms timer. Returns Some(SpeakerChange) only on speaker change.
+if let Some(change) = detector.tick(300) {
     println!("Dominant speaker: peer {} (confidence: {:.2})", change.peer_id, change.c2_margin);
 }
 
@@ -105,14 +107,18 @@ The crate is `#![no_std]` compatible. To use without the standard library:
 rust-dominant-speaker = { version = "0.3", default-features = false }
 ```
 
-Timestamps are caller-supplied `u64` milliseconds — no `Instant` dependency. In a browser AudioWorklet:
+Timestamps are caller-supplied `u64` milliseconds — no `Instant` dependency:
 
-```js
-// Rust side receives performance.now() as u64
-detector.tick(performance.now() as u64);
+```rust
+// All three methods accept u64 ms in both std and no_std builds.
+detector.add_peer(peer_id, now_ms);
+detector.record_level(peer_id, level, now_ms);
+detector.tick(now_ms);
 ```
 
-Runtime dependencies added for no_std: `hashbrown` (hash map) and `libm` (f64 math).
+In a browser AudioWorklet, supply `performance.now() as u64` as the timestamp.
+
+Runtime dependencies added for `no_std`: `hashbrown` (hash map) and `libm` (f64 math).
 
 ## License
 
