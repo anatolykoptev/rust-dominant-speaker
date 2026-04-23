@@ -62,6 +62,14 @@ impl Speaker {
         }
     }
 
+    /// Return the sum of raw volume samples in the levels ring buffer.
+    ///
+    /// Used as a tiebreaker when processed activity scores are equal (e.g.,
+    /// bootstrap elections before `min_level` adaptation has converged).
+    pub(crate) fn raw_level_sum(&self) -> u32 {
+        self.levels.iter().map(|&v| u32::from(v)).sum()
+    }
+
     /// Record a new audio level observation.
     ///
     /// `level` is already converted from RFC 6464 to volume (127 − dBov).

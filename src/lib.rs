@@ -31,9 +31,9 @@
 //!     t += Duration::from_millis(20);
 //! }
 //!
-//! // Call tick() on a timer — returns Some(peer_id) only on speaker change.
-//! if let Some(dominant) = detector.tick(t0 + TICK_INTERVAL) {
-//!     println!("Dominant speaker: peer {dominant}");
+//! // Call tick() on a timer — returns Some(SpeakerChange) only on speaker change.
+//! if let Some(change) = detector.tick(t0 + TICK_INTERVAL) {
+//!     println!("Dominant speaker: peer {}", change.peer_id);
 //! }
 //! ```
 //!
@@ -48,6 +48,22 @@ mod speaker;
 
 pub use detector::ActiveSpeakerDetector;
 
+/// Emitted by [`ActiveSpeakerDetector::tick`] when the dominant speaker changes.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SpeakerChange<PeerId = u64> {
+    /// The new dominant speaker's identifier.
+    pub peer_id: PeerId,
+    /// Medium-window log-ratio margin above the C2 threshold at election time.
+    ///
+    /// `0.0` for single-peer rooms and bootstrap elections (no challenger).
+    /// Positive values indicate how confidently the challenger beat the incumbent —
+    /// higher means more confident. Useful for UI animations or debouncing.
+    pub c2_margin: f64,
+}
+
+/// Convenience alias using `u64` peer IDs — backward-compatible with v0.1.x.
+pub type DefaultDetector = ActiveSpeakerDetector<u64>;
+
 /// Tunable constants for the dominant-speaker election.
 ///
 /// Defaults match mediasoup's production constants exactly.
@@ -59,7 +75,7 @@ pub use detector::ActiveSpeakerDetector;
 /// use std::time::Duration;
 ///
 /// // Use defaults (mediasoup-identical behaviour).
-/// let default_detector = ActiveSpeakerDetector::new();
+/// let default_detector: ActiveSpeakerDetector<u64> = ActiveSpeakerDetector::new();
 ///
 /// // Raise C1/C2 for a low-bitrate / mobile deployment: fewer speaker switches.
 /// let config = DetectorConfig {
@@ -68,7 +84,7 @@ pub use detector::ActiveSpeakerDetector;
 ///     tick_interval: Duration::from_millis(500),
 ///     ..DetectorConfig::default()
 /// };
-/// let tuned_detector = ActiveSpeakerDetector::with_config(config);
+/// let tuned_detector: ActiveSpeakerDetector<u64> = ActiveSpeakerDetector::with_config(config);
 /// ```
 #[derive(Debug, Clone)]
 pub struct DetectorConfig {

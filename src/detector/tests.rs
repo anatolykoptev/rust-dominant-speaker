@@ -1,7 +1,7 @@
 //! Unit tests for the dominant-speaker detector.
 
 use super::*;
-use crate::DetectorConfig;
+use crate::{DetectorConfig, SpeakerChange};
 use std::time::Duration;
 
 fn feed(d: &mut ActiveSpeakerDetector, p: u64, lvl: u8, from: Instant, ms: u64) {
@@ -13,12 +13,21 @@ fn feed(d: &mut ActiveSpeakerDetector, p: u64, lvl: u8, from: Instant, ms: u64) 
     }
 }
 
+/// Helper: assert tick returns a change for the given peer (ignores c2_margin).
+fn assert_speaker(change: Option<SpeakerChange>, expected_peer: u64) {
+    assert_eq!(
+        change.map(|c| c.peer_id),
+        Some(expected_peer),
+        "expected dominant speaker {expected_peer}"
+    );
+}
+
 #[test]
 fn single_speaker() {
     let mut d = ActiveSpeakerDetector::new();
     let t0 = Instant::now();
     d.add_peer(1, t0);
-    assert_eq!(d.tick(t0 + Duration::from_millis(300)), Some(1));
+    assert_speaker(d.tick(t0 + Duration::from_millis(300)), 1);
     assert_eq!(d.tick(t0 + Duration::from_millis(600)), None);
 }
 
@@ -30,7 +39,7 @@ fn silence_then_speech_switches() {
     d.add_peer(2, t0);
     feed(&mut d, 1, 5, t0, 2000);
     feed(&mut d, 2, 127, t0, 2000);
-    assert_eq!(d.tick(t0 + Duration::from_millis(2050)), Some(1));
+    assert_speaker(d.tick(t0 + Duration::from_millis(2050)), 1);
 }
 
 #[test]
@@ -41,7 +50,7 @@ fn hysteresis_prevents_brief_flap() {
     d.add_peer(2, t0);
     feed(&mut d, 1, 5, t0, 2000);
     feed(&mut d, 2, 127, t0, 2000);
-    assert_eq!(d.tick(t0 + Duration::from_millis(2050)), Some(1));
+    assert_speaker(d.tick(t0 + Duration::from_millis(2050)), 1);
     let t1 = t0 + Duration::from_millis(2050);
     feed(&mut d, 1, 127, t1, 400);
     feed(&mut d, 2, 5, t1, 400);
@@ -50,7 +59,6 @@ fn hysteresis_prevents_brief_flap() {
 
 #[test]
 fn detector_with_custom_constants_differs_from_default() {
-    // Verify that with_config stores the config and the accessor returns it.
     let config = DetectorConfig {
         c1: 5.0,
         c2: 4.0,
@@ -60,7 +68,7 @@ fn detector_with_custom_constants_differs_from_default() {
         n3: 8,
         ..DetectorConfig::default()
     };
-    let detector = ActiveSpeakerDetector::with_config(config.clone());
+    let detector: ActiveSpeakerDetector<u64> = ActiveSpeakerDetector::with_config(config.clone());
     assert!((detector.config().c1 - 5.0).abs() < f64::EPSILON);
     assert!((detector.config().c2 - 4.0).abs() < f64::EPSILON);
     assert!((detector.config().c3 - 1.0).abs() < f64::EPSILON);
@@ -68,8 +76,7 @@ fn detector_with_custom_constants_differs_from_default() {
     assert_eq!(detector.config().n2, 4);
     assert_eq!(detector.config().n3, 8);
 
-    // Default detector uses mediasoup constants.
-    let default_detector = ActiveSpeakerDetector::new();
+    let default_detector: ActiveSpeakerDetector<u64> = ActiveSpeakerDetector::new();
     assert!((default_detector.config().c1 - 3.0).abs() < f64::EPSILON);
     assert!((default_detector.config().c2 - 2.0).abs() < f64::EPSILON);
     assert_eq!(default_detector.config().n1, 13);
@@ -80,17 +87,13 @@ fn idle_removal_clears_dominance() {
     let mut d = ActiveSpeakerDetector::new();
     let t0 = Instant::now();
     d.add_peer(1, t0);
-    assert_eq!(d.tick(t0 + Duration::from_millis(300)), Some(1));
-    d.remove_peer(1);
+    assert_speaker(d.tick(t0 + Duration::from_millis(300)), 1);
+    d.remove_peer(&1);
     assert_eq!(d.tick(t0 + Duration::from_millis(600)), None);
 }
 
 #[test]
 fn custom_n1_elects_louder_peer() {
-    // Regression for the SUBUNIT_LENGTH_N1 bug: with n1=10 the subunit width
-    // is 13 (not 10), so subband indices stay in 0..9. Without the fix,
-    // activity scores were computed against the wrong subband space and
-    // elections failed to fire.
     let config = DetectorConfig {
         n1: 10,
         n2: 4,
@@ -101,9 +104,20 @@ fn custom_n1_elects_louder_peer() {
     let t0 = Instant::now();
     d.add_peer(1, t0);
     d.add_peer(2, t0);
-    feed(&mut d, 1, 5, t0, 2000);   // peer 1: loud
-    feed(&mut d, 2, 127, t0, 2000); // peer 2: silent
-    // Election must fire for peer 1.
-    let winner = d.tick(t0 + Duration::from_millis(2050));
-    assert_eq!(winner, Some(1), "n1=10 config should elect the louder peer");
+    feed(&mut d, 1, 5, t0, 2000);
+    feed(&mut d, 2, 127, t0, 2000);
+    assert_speaker(d.tick(t0 + Duration::from_millis(2050)), 1);
+}
+
+#[test]
+fn speaker_change_has_nonnegative_margin() {
+    let mut d = ActiveSpeakerDetector::new();
+    let t0 = Instant::now();
+    d.add_peer(1, t0);
+    d.add_peer(2, t0);
+    feed(&mut d, 1, 5, t0, 2000);
+    feed(&mut d, 2, 127, t0, 2000);
+    let change = d.tick(t0 + Duration::from_millis(2050)).expect("should elect");
+    assert_eq!(change.peer_id, 1);
+    assert!(change.c2_margin >= 0.0, "margin must be non-negative, got {}", change.c2_margin);
 }
