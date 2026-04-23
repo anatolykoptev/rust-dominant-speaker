@@ -144,8 +144,9 @@ impl ActiveSpeakerDetector {
             // Bootstrap: arbitrary seed when no incumbent — any real
             // activity will overwrite via the ratio test below.
             let seed = incumbent.or_else(|| self.speakers.keys().next().copied())?;
+            let subunit_len = crate::subunit_len_for(self.config.n1);
             if let Some(s) = self.speakers.get_mut(&seed) {
-                s.eval_scores(self.config.n1, self.config.n2, self.config.n3);
+                s.eval_scores(self.config.n1, self.config.n2, self.config.n3, subunit_len);
             }
             let dom = {
                 let s = self.speakers.get(&seed)?;
@@ -168,7 +169,7 @@ impl ActiveSpeakerDetector {
                 if sp.paused {
                     continue;
                 }
-                sp.eval_scores(self.config.n1, self.config.n2, self.config.n3);
+                sp.eval_scores(self.config.n1, self.config.n2, self.config.n3, subunit_len);
                 let c1 = (sp.score(0) / dom[0]).ln();
                 let c2 = (sp.score(1) / dom[1]).ln();
                 let c3 = (sp.score(2) / dom[2]).ln();

@@ -84,3 +84,26 @@ fn idle_removal_clears_dominance() {
     d.remove_peer(1);
     assert_eq!(d.tick(t0 + Duration::from_millis(600)), None);
 }
+
+#[test]
+fn custom_n1_elects_louder_peer() {
+    // Regression for the SUBUNIT_LENGTH_N1 bug: with n1=10 the subunit width
+    // is 13 (not 10), so subband indices stay in 0..9. Without the fix,
+    // activity scores were computed against the wrong subband space and
+    // elections failed to fire.
+    let config = DetectorConfig {
+        n1: 10,
+        n2: 4,
+        n3: 8,
+        ..DetectorConfig::default()
+    };
+    let mut d = ActiveSpeakerDetector::with_config(config);
+    let t0 = Instant::now();
+    d.add_peer(1, t0);
+    d.add_peer(2, t0);
+    feed(&mut d, 1, 5, t0, 2000);   // peer 1: loud
+    feed(&mut d, 2, 127, t0, 2000); // peer 2: silent
+    // Election must fire for peer 1.
+    let winner = d.tick(t0 + Duration::from_millis(2050));
+    assert_eq!(winner, Some(1), "n1=10 config should elect the louder peer");
+}

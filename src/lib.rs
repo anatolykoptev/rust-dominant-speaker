@@ -82,9 +82,8 @@ pub struct DetectorConfig {
     pub tick_interval: std::time::Duration,
     /// Immediate-window subband count (mediasoup: N1).
     ///
-    /// Note: changing `n1` without adjusting `SUBUNIT_LENGTH_N1` may produce
-    /// out-of-range subband indices. The default of 13 is coherent with the
-    /// internal buffer layout.
+    /// The subband width is derived automatically via `ceil(128 / n1)`.
+    /// The default of 13 gives a subband width of 10, matching mediasoup.
     pub n1: u8,
     /// Medium-window subband count (mediasoup: N2).
     pub n2: u8,
@@ -135,8 +134,6 @@ pub(crate) const MIN_LEVEL: u8 = 0;
 pub(crate) const MIN_LEVEL_WINDOW_LEN: u32 = 750;
 /// Threshold for medium-window immediate-to-medium downsampling (mediasoup: MediumThreshold).
 pub(crate) const MEDIUM_THRESHOLD: u8 = 7;
-/// Subunit size for the immediate buffer (mediasoup: SubunitLengthN1 = (127-0+13-1)/13).
-pub(crate) const SUBUNIT_LENGTH_N1: u8 = 10;
 /// Immediate-buffer length: covers 1 second at 20ms cadence × 5 subbands (mediasoup: ImmediateBuffLen).
 pub(crate) const IMMEDIATE_BUFF_LEN: usize = 50;
 /// Medium-buffer length (mediasoup: MediumsBuffLen).
@@ -152,3 +149,34 @@ pub(crate) const MIN_ACTIVITY_SCORE: f64 = 1.0e-10;
 ///
 /// Call [`ActiveSpeakerDetector::tick`] at this cadence for best results.
 pub const TICK_INTERVAL: std::time::Duration = std::time::Duration::from_millis(300);
+
+/// Compute the subband width for a given N1 value.
+///
+/// Formula: `ceil(128 / n1)`. Mediasoup hard-codes 10 for N1=13 —
+/// `ceil(128/13) = 10`. This function generalises it for custom configs.
+pub(crate) fn subunit_len_for(n1: u8) -> u8 {
+    let n1 = n1.max(1) as u16; // guard against zero
+    ((128u16 + n1 - 1) / n1) as u8
+}
+
+#[cfg(test)]
+mod subunit_tests {
+    use super::subunit_len_for;
+
+    #[test]
+    fn default_n1_gives_10() {
+        assert_eq!(subunit_len_for(13), 10);
+    }
+
+    #[test]
+    fn n1_10_gives_13() {
+        // ceil(128/10) = 13
+        assert_eq!(subunit_len_for(10), 13);
+    }
+
+    #[test]
+    fn n1_8_gives_16() {
+        // ceil(128/8) = 16
+        assert_eq!(subunit_len_for(8), 16);
+    }
+}

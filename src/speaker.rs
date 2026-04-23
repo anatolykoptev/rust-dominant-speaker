@@ -12,7 +12,6 @@ use super::numerics::{compute_activity_score, compute_bigs};
 use super::{
     IMMEDIATE_BUFF_LEN, LEVELS_BUFF_LEN, LONGS_BUFF_LEN, LONG_THRESHOLD, MAX_LEVEL,
     MEDIUMS_BUFF_LEN, MEDIUM_THRESHOLD, MIN_ACTIVITY_SCORE, MIN_LEVEL, MIN_LEVEL_WINDOW_LEN,
-    SUBUNIT_LENGTH_N1,
 };
 
 /// Per-peer audio state tracked by the detector.
@@ -118,8 +117,8 @@ impl Speaker {
     /// Returns `true` if any slot changed (short-circuits further evaluation).
     ///
     /// Port of mediasoup C++ `ComputeImmediates`.
-    fn compute_immediates(&mut self) -> bool {
-        let thresh = self.min_level.saturating_add(SUBUNIT_LENGTH_N1);
+    fn compute_immediates(&mut self, subunit_len: u8) -> bool {
+        let thresh = self.min_level.saturating_add(subunit_len);
         let mut changed = false;
         for i in 0..IMMEDIATE_BUFF_LEN {
             let idx = if self.next_level_index > i {
@@ -131,7 +130,7 @@ impl Speaker {
             if lvl < thresh {
                 lvl = MIN_LEVEL;
             }
-            let imm = lvl / SUBUNIT_LENGTH_N1;
+            let imm = lvl / subunit_len;
             if self.immediates[i] != imm {
                 self.immediates[i] = imm;
                 changed = true;
@@ -146,8 +145,8 @@ impl Speaker {
     /// avoids redundant log/binomial work for silent peers.
     ///
     /// Port of mediasoup C++ `EvalActivityScores`.
-    pub(crate) fn eval_scores(&mut self, n1: u8, n2: u8, n3: u8) {
-        if !self.compute_immediates() {
+    pub(crate) fn eval_scores(&mut self, n1: u8, n2: u8, n3: u8, subunit_len: u8) {
+        if !self.compute_immediates(subunit_len) {
             return;
         }
         self.immediate_score = compute_activity_score(self.immediates[0], u32::from(n1), 0.5, 0.78);
