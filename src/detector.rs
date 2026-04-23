@@ -8,6 +8,8 @@
 //! - [`ActiveSpeakerDetector::record_level`]
 //! - [`ActiveSpeakerDetector::tick`]
 //! - [`ActiveSpeakerDetector::current_dominant`]
+//! - [`ActiveSpeakerDetector::current_top_k`]
+//! - [`ActiveSpeakerDetector::peer_scores`]
 
 use std::collections::HashMap;
 use std::hash::Hash;
@@ -247,7 +249,8 @@ where
     /// Return the top `k` speakers by medium-window activity score, highest first.
     ///
     /// Paused (idle) peers are excluded. Returns fewer than `k` entries if
-    /// fewer active peers exist. Scores reflect the last [`tick`](Self::tick) call.
+    /// fewer active peers exist. Scores are stale between ticks — call after
+    /// each [`tick`](Self::tick) for current data.
     ///
     /// Ties in medium score are broken by raw level sum (higher = louder),
     /// matching the bootstrap-election tiebreaker in [`tick`](Self::tick).
