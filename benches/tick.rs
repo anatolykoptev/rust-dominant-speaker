@@ -1,6 +1,10 @@
 //! Criterion benchmark for `ActiveSpeakerDetector::tick`.
 //!
-//! Measures: 50-peer room at 300ms tick cadence, all peers active.
+//! Two scenarios at 300ms tick cadence (setup is outside the measurement loop):
+//! - `tick_50_peers` — high-contention: 25 loud peers (RFC 6464 level 10)
+//!   vs 25 quiet peers (level 100); exercises the full election path.
+//! - `tick_5_peers` — low-contention baseline: 1 dominant speaker (level 5)
+//!   vs 4 quiet peers (level 90).
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use dominant_speaker::ActiveSpeakerDetector;
