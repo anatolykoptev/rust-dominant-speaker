@@ -1,8 +1,7 @@
 # Research — Potential Improvements for rust-dominant-speaker
 
-**Date:** 2026-04-22
-**Scope:** `rust-dominant-speaker` v0.1.1 — grounded in academic + industry research,
-read-only research pass.
+**Last updated:** 2026-04-22 (post v0.3.0)
+**Scope:** Forward-looking research for v0.3+. All v0.2 and no_std/WASM v0.3 items are shipped.
 **Anchor constraints:**
 - Must remain a pure-Rust, zero-dependency crate at its core.
 - Must stay sans-I/O — no async, no networking, no WebRTC stack coupling.
@@ -12,260 +11,113 @@ read-only research pass.
 
 ---
 
-## Executive summary
+## What shipped in v0.2.x
 
-1. **Most urgent correctness fix: `SUBUNIT_LENGTH_N1` is not derived from `n1` in `DetectorConfig`.**
-   When a caller passes `n1 != 13`, `compute_immediates` still divides by the hardcoded
-   constant `10`, producing subband indices that exceed the configured `n1` bucket count.
-   The result is silently wrong activity scores for custom configs. Small fix (2–3 h),
-   critical for anyone using `DetectorConfig` with non-default `n1`. **Do this first.**
+All items originally planned for v0.2 are complete:
 
-2. **Generic peer ID unlocks the largest adoption segment.**
-   `u64` is a sensible default but forces callers to maintain a `String → u64` mapping table.
-   Making `ActiveSpeakerDetector<PeerId>` generic over `PeerId: Hash + Eq + Clone` is
-   backward-compatible via a type alias `type DefaultDetector = ActiveSpeakerDetector<u64>`.
-   Medium effort (2–3 days), high impact for real-world integrations.
-
-3. **Add `current_top_k` and raw score access for UI-tier consumers.**
-   Every video grid UI needs to rank speakers for tile highlighting, not just know who's
-   dominant. `current_top_k(k) -> Vec<PeerId>` is cheap (sort N scores at tick time, N ≤ 50
-   in any realistic room). This is the single most-requested pattern across LiveKit, Jitsi,
-   and Chime implementations. Small (1 day).
-
-4. **Add a confidence-margin field to the change event.**
-   `tick()` returning `Option<PeerId>` loses the C2 margin that decided the election.
-   A `SpeakerChange { peer_id, c2_margin: f64 }` return type lets callers implement their
-   own smoothing, debounce animations, or raise confidence bars. Small (0.5 day), no
-   behavioral change.
-
-5. **`no_std` support opens embedded/WASM targets with minimal cost.**
-   The crate has zero runtime dependencies and no I/O. The only blocker is `std::time::Instant`.
-   Replace with a caller-supplied monotonic timestamp (`u64` milliseconds) and the crate
-   compiles `#![no_std]`. WASM-deployed in a browser AudioWorklet or Insertable Streams
-   worker becomes possible. Medium (1 week, due to API surface change).
-
-6. **LiveKit-style EMA approach as an optional alternative scorer.**
-   LiveKit uses exponential-decay smoothing (EMA over a percentile window) rather than
-   the Volfin/Cohen binomial test. It is simpler, has lower latency (~100ms vs ~300ms),
-   and handles burst speakers better. The tradeoff: more false positives in quiet rooms
-   and no three-timescale hysteresis. Offer as a `feature = "ema-scorer"` opt-in with a
-   `ScoringPolicy` trait. Medium (3–4 days).
+| Item | Released |
+|------|---------|
+| Derive `subunit_len` from configured `n1` (`ceil(128/n1)`) | v0.2.0 |
+| Generic `ActiveSpeakerDetector<PeerId: Eq+Hash+Clone>` | v0.2.0 |
+| `type DefaultDetector = ActiveSpeakerDetector<u64>` alias | v0.2.0 |
+| `BTreeMap → HashMap`; `raw_level_sum` tiebreaker for bootstrap elections | v0.2.0 |
+| `SpeakerChange<PeerId> { peer_id, c2_margin }` return from `tick()` | v0.2.0 |
+| `current_top_k(k) -> Vec<PeerId>` | v0.2.0 |
+| `peer_scores() -> Vec<(PeerId, f64, f64, f64)>` | v0.2.0 |
+| `serde` feature flag for `DetectorConfig` (tick_interval as u64 ms) | v0.2.0 |
+| Criterion benchmarks: `tick_5_peers` (~2.2µs), `tick_50_peers` (~10µs) | v0.2.0 |
+| 18 unit tests + 29 adversarial tests (54 total) | v0.2.0 |
+| `binomial_coefficient(n,r)` returned 1 when r > n — fixed, early return | v0.2.1 |
+| `compute_activity_score` unsigned underflow when v_l > n_r — fixed, clamped | v0.2.1 |
 
 ---
 
-## Correctness: `n1` / `SUBUNIT_LENGTH_N1` coupling bug
+## Executive summary for v0.3
 
-### Current state
+1. **`no_std` / WASM unlocks the largest untapped adoption segment.**
+   The only `std` dependency is `Instant`. Replace with caller-supplied `u64` milliseconds;
+   the crate then compiles to `wasm32-unknown-unknown` and can run in a browser AudioWorklet
+   or Insertable Streams worker. No WebRTC competitor offers a WASM-deployable dominant
+   speaker implementation. Medium effort (~1 week), high impact.
 
-`SUBUNIT_LENGTH_N1 = 10` is derived from the mediasoup formula:
-`ceil((MAX_LEVEL - MIN_LEVEL + N1) / N1) = ceil((127 + 13) / 13) = 11`
-(mediasoup actually hard-codes `10`; we port the constant verbatim).
+2. **`ScoringPolicy` trait unlocks the LiveKit and Chime use cases.**
+   Both LiveKit (EMA + percentile noise floor) and Amazon Chime (decay score, pluggable
+   policy) use simpler algorithms than Volfin/Cohen. A `ScoringPolicy` trait lets callers
+   inject their own scorer while reusing our election / top-K / hysteresis machinery.
+   Medium effort (3–4 d for trait + EmaPolicy).
 
-In `compute_immediates`:
-```rust
-let imm = lvl / SUBUNIT_LENGTH_N1;  // hardcoded 10
-self.immediates[i] = imm;
-```
+3. **proptest / fuzzing for invariant confidence.**
+   54 handwritten tests cover known cases. Property-based testing (proptest) can
+   verify score monotonicity and election invariants across the full parameter space,
+   including edge cases the adversarial suite can't enumerate. The numerics bugs found
+   in v0.2.1 are exactly what fuzzing finds cheaply.
 
-Then in `eval_scores`:
-```rust
-self.immediate_score = compute_activity_score(self.immediates[0], u32::from(n1), ...);
-```
-
-If `n1 = 10` (custom config), `compute_activity_score` treats the score as drawn from
-10 subbands, but `imm` values can still be 0–12 (127/10), overflowing the 0–9 range.
-`compute_bigs` then counts values `> MEDIUM_THRESHOLD (7)` — it never panics, but the
-score is computed against the wrong subband space.
-
-### Fix
-
-Derive `SUBUNIT_LENGTH_N1` from the configured `n1` at construction time:
-
-```rust
-fn subunit_len(n1: u8) -> u8 {
-    // mediasoup formula: ceil((127 + n1) / n1)
-    ((127u16 + n1 as u16 + n1 as u16 - 1) / n1 as u16) as u8
-}
-```
-
-Store it in `Speaker` (or pass through `eval_scores`). The default `n1 = 13` produces
-`subunit_len(13) = 11` (mediasoup hard-codes 10 — keep 10 as the constant for default
-to preserve bit-identical behavior; only re-derive for non-default `n1`).
-
-Alternatively: validate in `DetectorConfig` that `n1 == N1` or document the limitation
-with a `#[doc(alias = "unsafe")]` note and a runtime assert. The re-derive approach is
-cleaner.
-
-### Recommendations
-
-| # | Item | Effort | Release |
-|---|------|--------|---------|
-| 1 | Derive `subunit_len` from `n1`; store in `Speaker`; fix `compute_immediates` | small (2–3 h) | **v0.2** |
-| 2 | Add regression test: `n1=10` config with active speech still elects correctly | small (1 h) | **v0.2** |
+4. **Overlap detection opens meeting-quality analytics.**
+   When two challengers simultaneously exceed the C2 threshold, we can emit an `Overlap`
+   event. No competitor implements this. The timescale buffers we already maintain provide
+   80% of the required signal. Define `SpeakerChange` as `#[non_exhaustive]` now to reserve
+   the extension point without a breaking change.
 
 ---
 
-## API ergonomics
+## Platform support
 
-### Generic peer ID
-
-#### Current state
-
-`u64` is hardcoded throughout `ActiveSpeakerDetector`, `Speaker` map key, and return values.
-Real WebRTC applications use `String` (Jitsi endpoint IDs), UUID (LiveKit participant IDs),
-or custom newtypes. Every caller maintains a `String → u64` interning table — boilerplate
-that leaks into application code.
-
-#### Industry survey
-
-| System | Peer ID type |
-|--------|-------------|
-| mediasoup | `string` (producer ID) |
-| Jitsi Videobridge | `String` (endpoint ID) |
-| LiveKit | `string` (participant identity) |
-| Amazon Chime SDK | `string` (attendee ID) |
-| oxpulse-chat | `Uuid` |
-
-All production systems use string IDs. `u64` is a numeric shim that fits databases but
-not WebRTC signaling stacks.
-
-#### Proposed API
-
-```rust
-pub struct ActiveSpeakerDetector<PeerId = u64>
-where
-    PeerId: Eq + Hash + Clone,
-{
-    speakers: HashMap<PeerId, Speaker>,
-    current_dominant: Option<PeerId>,
-    ...
-}
-
-// Backward compat:
-pub type DefaultDetector = ActiveSpeakerDetector<u64>;
-```
-
-`HashMap` replaces `BTreeMap` for the generic case (hash is O(1) vs BTreeMap's O(log n)).
-The determinism property from `BTreeMap` (seed election) can be preserved via a secondary
-sorted `Vec<PeerId>` for the bootstrap case only — or drop the determinism guarantee (it
-only matters for tests, and we can use `BTreeMap` only in tests via a cfg flag).
-
-#### Recommendations
-
-| # | Item | Effort | Release |
-|---|------|--------|---------|
-| 1 | Make `ActiveSpeakerDetector<PeerId: Eq + Hash + Clone>` generic | medium (2 d) | v0.2 |
-| 2 | Add `type DefaultDetector = ActiveSpeakerDetector<u64>` alias for back-compat | small (0.5 h) | v0.2 |
-| 3 | Document the seed-election determinism change in CHANGELOG | small | v0.2 |
-
-### Top-K speakers
+### `no_std` / embedded / WASM
 
 #### Current state
 
-`current_dominant()` returns `Option<u64>`. No API for "top 3 speakers" or "all active
-speakers ranked by activity". Every grid-layout UI needs this.
+The crate has zero `[dependencies]` and no I/O. The only `std` usage is
+`std::time::Instant` (in every public function taking `now: Instant`) and
+`std::collections::HashMap`. `HashMap` requires `std` (not in `alloc`); `Instant`
+is not available in `alloc` at all.
 
-#### Industry survey
+#### Proposed approach
 
-- **Jitsi Videobridge**: exposes `recent-speakers-count` — an N-deep ring of recent
-  dominant speakers for grid tile prioritization.
-- **LiveKit**: `ActiveSpeakersUpdate` proto message carries a `Vec<ActiveSpeakerInfo>`
-  sorted by audio level, not just the winner.
-- **Amazon Chime SDK**: `activeSpeakerDidUpdate(attendees: AttendeeSubscription[])` —
-  always passes the full ranked list.
-
-The pattern is universal: callers need a ranked list, not just the winner.
-
-#### Proposed API
+Replace `Instant` with `u64` (milliseconds since epoch or call site's epoch). The caller
+provides the timestamp — this is already the sans-I/O pattern the crate follows conceptually.
 
 ```rust
-/// Return the top `k` speakers by medium-window activity score, highest first.
-///
-/// Empty if no peers are registered. Shorter than `k` if fewer peers exist.
-/// The result is a snapshot — scores advance only via [`tick`](Self::tick).
-pub fn current_top_k(&self, k: usize) -> Vec<PeerId>;
-
-/// Return all peers with their current (immediate, medium, long) scores.
-///
-/// Useful for dashboards and custom selection logic. Scores are stale
-/// between ticks — call after each tick for fresh data.
-pub fn peer_scores(&self) -> Vec<(PeerId, f64, f64, f64)>;
-```
-
-`current_top_k` sorts `speakers` by `medium_score` descending, takes `k`. The dominant
-speaker is always first. Ties broken by `BTreeMap`/`HashMap` iteration order (stable
-within a tick, undefined across ticks — document this).
-
-#### Recommendations
-
-| # | Item | Effort | Release |
-|---|------|--------|---------|
-| 1 | Add `current_top_k(k) -> Vec<PeerId>` | small (1 d) | v0.2 |
-| 2 | Add `peer_scores() -> Vec<(PeerId, f64, f64, f64)>` | small (0.5 d) | v0.2 |
-| 3 | Tests: top-k order matches expectations after feeding different levels | small (0.5 d) | v0.2 |
-
-### Confidence margin on speaker change
-
-#### Current state
-
-`tick()` returns `Option<u64>`. The C2 log-ratio margin that triggered the switch is
-computed internally but discarded. Callers that want to animate a "confidence ring" or
-debounce low-confidence switches have no signal.
-
-#### Proposed API
-
-```rust
-/// Return value from [`ActiveSpeakerDetector::tick`].
-#[derive(Debug, Clone, PartialEq)]
-pub struct SpeakerChange<PeerId> {
-    /// The new dominant speaker.
-    pub peer_id: PeerId,
-    /// Medium-window log-ratio margin above the C2 threshold.
-    /// Higher = more confident switch. Useful for UI animations.
-    pub c2_margin: f64,
-}
-
+// Before
+pub fn record_level(&mut self, peer_id: PeerId, level_raw: u8, now: Instant);
 pub fn tick(&mut self, now: Instant) -> Option<SpeakerChange<PeerId>>;
+
+// After (no_std)
+pub fn record_level(&mut self, peer_id: PeerId, level_raw: u8, now_ms: u64);
+pub fn tick(&mut self, now_ms: u64) -> Option<SpeakerChange<PeerId>>;
 ```
 
-**Breaking change** — but `tick()` is the primary API. Make this v0.2 (minor bump since
-we're pre-1.0) or gate behind a feature flag. The `c2_margin` is `best_c2 - self.config.c2`
-at the point of the winning challenger — already computed, just not surfaced.
+Duration arithmetic becomes plain integer subtraction. Monotonicity violations (unlikely,
+but possible in WASM environments where `performance.now()` can be throttled) become
+`saturating_sub` instead of panics.
+
+For the hash map: `HashMap` is available with the `hashbrown` crate (`no_std`). Feature-gate
+it behind `default-features = false, features = ["ahash"]` — or carry `BTreeMap` as the
+`no_std` fallback (available in `alloc`).
+
+A `std` feature flag re-exports `Instant`-based convenience wrappers for callers that prefer
+the ergonomics of the current API.
+
+**WASM target:** After `no_std`, the crate compiles to `wasm32-unknown-unknown`. In a browser
+AudioWorklet, `currentTime * 1000` as `u64` is the timestamp. Client-side dominant speaker
+detection eliminates a server round-trip for self-mute UX and local tile highlighting.
+
+#### Tradeoffs
+
+`u64` milliseconds introduces a 1ms quantization (Instant has nanosecond resolution).
+The algorithm's minimum meaningful window is 20ms (one audio frame), so 1ms error is
+negligible. The current `elapsed_ms / 20` integer division already introduces 20ms
+quantization anyway.
+
+**Breaking change.** Semver minor bump (pre-1.0 → v0.3).
 
 #### Recommendations
 
 | # | Item | Effort | Release |
 |---|------|--------|---------|
-| 1 | Return `Option<SpeakerChange>` from `tick` with `peer_id + c2_margin` | small (0.5 d) | v0.2 |
-| 2 | Add `SpeakerChange` to public re-exports | tiny | v0.2 |
-
-### Serde support
-
-`DetectorConfig` is a natural candidate for JSON/TOML serialization (server config files,
-REST API tuning endpoints). Zero runtime cost — feature-gated.
-
-```toml
-[features]
-serde = ["dep:serde"]
-
-[dependencies]
-serde = { version = "1", features = ["derive"], optional = true }
-```
-
-```rust
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct DetectorConfig { ... }
-```
-
-`Duration` requires a custom serde representation (milliseconds as `u64`) — use
-`#[serde(with = "serde_duration_ms")]` helper or the `humantime-serde` crate (MIT).
-
-#### Recommendations
-
-| # | Item | Effort | Release |
-|---|------|--------|---------|
-| 1 | Add `serde` feature flag for `DetectorConfig` | small (0.5 d) | v0.2 |
-| 2 | Serialize `tick_interval` as milliseconds (`u64`) | small | v0.2 |
+| 1 | Replace `Instant` with `u64` (ms); add `std` feature for Instant-based wrappers | medium (1 wk) | **shipped in v0.3.0** |
+| 2 | Add `#![no_std] + extern crate alloc`; use `hashbrown` or `BTreeMap` fallback | small (1 d, after #1) | **shipped in v0.3.0** |
+| 3 | Add WASM CI target (`wasm32-unknown-unknown`) | small (0.5 d) | **shipped in v0.3.0** |
+| 4 | README note: AudioWorklet deployment example with `performance.now()` timestamp | tiny | **shipped in v0.3.0** |
 
 ---
 
@@ -292,8 +144,8 @@ noise floor:
 
 ```go
 type AudioLevelConfig struct {
-    ActiveLevel    uint8   // RFC 6464 level that counts as "active" (default ~35)
-    MinPercentile  uint8   // percentile of the EMA distribution as noise floor (default 25)
+    ActiveLevel     uint8  // RFC 6464 level that counts as "active" (default ~35)
+    MinPercentile   uint8  // percentile of the EMA distribution as noise floor (default 25)
     ObserveDuration uint32 // ms of samples to keep
     SmoothIntervals uint32 // EMA decay periods
 }
@@ -325,7 +177,7 @@ This is the most general design. In Rust:
 ```rust
 pub trait ScoringPolicy<PeerId> {
     /// Observe a new audio level for `peer_id`. Called on every `record_level`.
-    fn observe(&mut self, peer_id: &PeerId, volume: u8, now: Instant);
+    fn observe(&mut self, peer_id: &PeerId, volume: u8, now: u64);
     /// Return the current score for `peer_id`. Higher = more likely dominant.
     fn score(&self, peer_id: &PeerId) -> f64;
     /// Called when a peer is removed.
@@ -337,8 +189,8 @@ The default impl would be the Volfin/Cohen three-timescale approach. An `EmaPoli
 be offered as a second impl. The election logic (hysteresis, top-k) stays in
 `ActiveSpeakerDetector`.
 
-**Recommendation:** Add the `ScoringPolicy` trait in v0.3 after the generic PeerId
-and top-k APIs stabilize. Do not couple it to the initial API simplification.
+**Recommendation:** Add `ScoringPolicy` in v0.3 after the `no_std` / `u64` timestamp
+change stabilizes the API. Do not couple it to the initial simplification.
 
 #### Recommendations
 
@@ -361,160 +213,90 @@ INTERSPEECH 2013. Uses energy ratios in overlapping windows — not deep learnin
 in real-time on a single thread.
 
 **Applicability:** The three-timescale buffer we already maintain is 80% of what overlap
-detection needs. When `tick()` finds two challengers whose C2 score exceeds `self.config.c2`
-simultaneously, we can emit an `Overlap` event alongside the dominant speaker change.
+detection needs. When `tick()` finds two challengers whose C2 score simultaneously exceeds
+`self.config.c2`, we can emit an `Overlap` event alongside the dominant speaker change.
 
-**Recommendation:** Deferred to v0.3+. Define the event variant now in `SpeakerChange`
-as `#[non_exhaustive]` to reserve the extension point.
-
----
-
-## Platform support
-
-### `no_std` / embedded / WASM
-
-#### Current state
-
-The crate has zero `[dependencies]` and no I/O. The only `std` usage is
-`std::time::Instant` (in every public function taking `now: Instant`) and
-`std::collections::{BTreeMap, HashMap}`. `BTreeMap` is available in `alloc`; `Instant`
-is not.
-
-#### Proposed approach
-
-Replace `Instant` with `u64` (milliseconds since epoch). The caller provides the
-timestamp — this is already the sans-I/O pattern the crate follows conceptually.
-
-```rust
-// Before
-pub fn record_level(&mut self, peer_id: u64, level_raw: u8, now: Instant);
-pub fn tick(&mut self, now: Instant) -> Option<SpeakerChange>;
-
-// After (no_std)
-pub fn record_level(&mut self, peer_id: PeerId, level_raw: u8, now_ms: u64);
-pub fn tick(&mut self, now_ms: u64) -> Option<SpeakerChange<PeerId>>;
-```
-
-Duration arithmetic (`elapsed_ms = now - last`) becomes plain subtraction on `u64` —
-simpler, faster, no panics on monotonicity violations (saturating_sub instead).
-
-`#![no_std]` + `extern crate alloc` for `BTreeMap`/`Vec`. A `std` feature flag
-re-exports the `Instant`-based convenience wrappers for callers that prefer them.
-
-**WASM target:** After `no_std`, the crate compiles to `wasm32-unknown-unknown` and can
-run in an AudioWorklet or Insertable Streams worker, enabling client-side dominant speaker
-detection without a server round-trip. Low-latency local detection is useful for
-self-mute UX and local speaker tile highlighting.
-
-#### Tradeoffs
-
-`u64` milliseconds introduces a 1ms quantization (Instant has nanosecond resolution).
-The algorithm's minimum meaningful window is 20ms (one audio frame), so 1ms error is
-negligible. The current `elapsed_ms / 20` integer division already introduces 20ms
-quantization anyway.
-
-**Breaking change.** Requires a semver bump (v0.2 since we're pre-1.0).
-
-#### Recommendations
-
-| # | Item | Effort | Release |
-|---|------|--------|---------|
-| 1 | Replace `Instant` with `u64` (ms); add `std` feature for Instant-based wrappers | medium (1 week) | v0.2 or v0.3 |
-| 2 | Add `#![no_std] + extern crate alloc` | small (1 d, depends on #1) | same |
-| 3 | Add WASM CI target (`wasm32-unknown-unknown`) | small (0.5 d) | same |
-| 4 | Add note in README about client-side AudioWorklet deployment | tiny | same |
+**Recommendation:** Deferred to v0.3+. Mark `SpeakerChange` as `#[non_exhaustive]` now
+to reserve the extension point without a future breaking change.
 
 ---
 
 ## Testing and benchmarking
 
-### Current test coverage
+### Current state (post v0.2.1)
 
-Four integration tests in `src/detector/tests.rs`:
-- `single_speaker` — trivial one-peer case
-- `silence_then_speech_switches` — basic election
-- `hysteresis_prevents_brief_flap` — hysteresis with 400ms silence
-- `detector_with_custom_constants_differs_from_default` — config accessor test (does NOT
-  verify election behavior with custom config — only stores and reads values)
+54 tests across four modules:
 
-Unit tests in `src/numerics.rs`: 2 math smoke tests.
+| Module | Tests | Coverage |
+|--------|-------|----------|
+| `numerics::tests` | 6 | All math helpers; 4 regression tests for the two v0.2.1 bugs |
+| `detector::tests` | 18 | Behavioral invariants: election, hysteresis, idle, top-k, scores |
+| `detector::adversarial_tests` | 29 | Edge cases: empty room, single peer, rapid removal, paused peers, large rooms, stress |
+| doc-tests | 2 | Public API examples |
 
-**Notable gaps:**
-- No test exercises `n1 != 13` election behavior (the bug above goes untested)
-- No test for `remove_peer` clearing dominance mid-election
-- No test for the `SPEAKER_IDLE_TIMEOUT_MS` pause path
-- No test for rapid clock skew (out-of-order `Instant` calls — guarded by `if now < last`)
-- No property-based tests verifying score monotonicity or idempotency
+Criterion benchmarks: `tick_5_peers` (~2.2µs/iter), `tick_50_peers` (~10µs/iter).
 
-### Benchmark
+**Remaining gaps:**
 
-No benchmarks exist. The hot path (`tick` for a 50-person room) is:
-- 50× `eval_scores` → `compute_immediates` (50-iteration loop) + `compute_bigs` twice
-- 50× log-ratio comparison (2× `ln()`)
-
-Estimated <1µs per tick for 50 peers (linear scan, no allocation). A Criterion benchmark
-would confirm this and detect regressions when the generic PeerId change lands.
+- No **property-based tests** verifying score monotonicity across the parameter space
+  (proptest or quickcheck). The v0.2.1 bugs were found by adversarial test design, not
+  automated invariant search — proptest would have found them faster.
+- No **fuzz target** for `record_level` / `tick` with arbitrary byte sequences.
+  The public API accepts `u8` level and `u64` peer IDs — low-risk but fuzzing is cheap.
+- No **WASM CI target** — blocked on `no_std` work.
+- No **benchmark regression CI** — Criterion baselines are not saved in CI.
 
 #### Recommendations
 
 | # | Item | Effort | Release |
 |---|------|--------|---------|
-| 1 | Test: `n1=10` config elects correctly (also covers the bug fix above) | small (1 h) | v0.2 |
-| 2 | Test: `remove_peer` + subsequent `tick` re-elects correctly | small (0.5 h) | v0.2 |
-| 3 | Test: `SPEAKER_IDLE_TIMEOUT_MS` pause path | small (1 h) | v0.2 |
-| 4 | Criterion benchmark: 50-peer `tick()` latency | small (1 d) | v0.2 |
-| 5 | proptest: score(peer_with_loud_level) ≥ score(peer_with_silent_level) | small (1 d) | v0.3 |
+| 1 | proptest: score(loud) ≥ score(silent) monotonicity invariant | small (1 d) | v0.3 |
+| 2 | proptest: `current_top_k(k).len() ≤ min(k, peer_count)` | small (0.5 d) | v0.3 |
+| 3 | cargo-fuzz target for `record_level + tick` | small (1 d) | v0.3 |
+| 4 | CI: save Criterion baselines to `gh-pages` branch for regression tracking | small (0.5 d) | v0.3 |
 
 ---
 
 ## Ecosystem comparison
 
-| Feature | rust-dominant-speaker v0.1.1 | mediasoup (C++) | Jitsi (Java) | LiveKit (Go) | Amazon Chime (TS) |
+| Feature | rust-dominant-speaker v0.2.1 | mediasoup (C++) | Jitsi (Java) | LiveKit (Go) | Amazon Chime (TS) |
 |---------|------------------------------|-----------------|--------------|--------------|-------------------|
 | Algorithm | Volfin & Cohen 2012 | Volfin & Cohen 2012 | Volfin & Cohen 2012 | EMA + percentile | Decay score |
 | Hysteresis (3-window) | ✅ | ✅ | ✅ | ❌ | ❌ |
-| Dominant speaker only | ✅ | ✅ | ✅ | ✅ | — |
-| Top-K speakers | ❌ | ❌ | ✅ (recent ring) | ✅ | ✅ |
-| Confidence margin | ❌ | ❌ | ❌ | ❌ | partial (score) |
+| Generic peer ID | ✅ (`PeerId: Eq+Hash+Clone`) | string | String | string | string |
+| Top-K speakers | ✅ `current_top_k` | ❌ | ✅ (recent ring) | ✅ | ✅ |
+| Raw score access | ✅ `peer_scores` | ❌ | ❌ | ❌ | partial |
+| Confidence margin | ✅ `c2_margin` | ❌ | ❌ | ❌ | partial (score) |
+| Serde for config | ✅ (feature flag) | N/A | N/A | N/A | N/A |
 | Overlap detection | ❌ | ❌ | ❌ | ❌ | ❌ |
-| Generic peer ID | ❌ (u64) | string | String | string | string |
-| Serde for config | ❌ | N/A | N/A | N/A | N/A |
-| no_std / WASM | ❌ | ❌ | ❌ | ❌ | ❌ |
+| no_std / WASM | ✅ | ❌ | ❌ | ❌ | ❌ |
 | Pluggable scorer | ❌ | ❌ | ❌ | ❌ | ✅ (Policy iface) |
-| Benchmark | ❌ | ❌ | ❌ | ✅ | — |
-| Zero dependencies | ✅ | N/A | N/A | N/A | N/A |
+| Criterion benchmarks | ✅ | ❌ | ❌ | ✅ | — |
+| Adversarial tests | ✅ (29) | — | — | — | — |
+| Zero runtime deps | ✅ | N/A | N/A | N/A | N/A |
 | License | MIT/Apache | ISC | Apache-2.0 | Apache-2.0 | Apache-2.0 |
 
 **Reading the table:**
-- We are algorithm-identical to mediasoup/Jitsi. This is the correct baseline.
-- We're behind on top-K, generic IDs, and serde — all purely API surface work, no algorithm change.
-- We're ahead on: zero deps, dual license, Rust memory safety, `forbid(unsafe_code)`.
-- WASM/no_std is an untapped advantage — no competitor offers a WASM-deployable implementation.
+- We are feature-equivalent to mediasoup/Jitsi on the core algorithm. This is the correct baseline.
+- We now lead on: generic IDs, top-K, raw scores, confidence margin, serde, adversarial testing.
+- WASM/no_std is the next untapped advantage — no competitor offers a WASM-deployable impl.
 - Amazon Chime is the only one with a pluggable scorer — worth copying as a v0.3 design.
 
 ---
 
-## Prioritized backlog
-
-Ranked by (impact × actionability / effort). v0.2 = next release. v0.3 = one version out.
+## Prioritized backlog (v0.3+)
 
 | # | Item | Area | Effort | Impact | Release |
 |---|------|------|--------|--------|---------|
-| 1 | Fix `SUBUNIT_LENGTH_N1` derivation from configured `n1` | correctness | tiny (2–3 h) | **High** — silent bug for custom configs | **v0.2** |
-| 2 | Add `current_top_k(k) -> Vec<PeerId>` | API | small (1 d) | **High** — universal UI requirement | **v0.2** |
-| 3 | Return `SpeakerChange { peer_id, c2_margin }` from `tick` | API | small (0.5 d) | Medium-High — enables confidence UI | **v0.2** |
-| 4 | Serde feature flag for `DetectorConfig` | API | small (0.5 d) | Medium — config files / REST tuning | **v0.2** |
-| 5 | Tests for `n1` bug, `remove_peer`, idle pause path | testing | small (1 d) | Medium — coverage gaps | **v0.2** |
-| 6 | Criterion benchmark for 50-peer `tick()` | testing | small (1 d) | Medium — perf baseline | **v0.2** |
-| 7 | `peer_scores() -> Vec<(PeerId, f64, f64, f64)>` | API | small (0.5 d) | Medium — dashboard / debug | **v0.2** |
-| 8 | Generic `ActiveSpeakerDetector<PeerId: Eq+Hash+Clone>` | API | medium (2 d) | **High** — adoption by real apps | **v0.2** |
-| 9 | Replace `Instant` with `u64` ms; `std` feature for wrappers | platform | medium (1 wk) | High — `no_std` / WASM unlock | v0.3 |
-| 10 | `#![no_std] + extern crate alloc` | platform | small (1 d) | High (depends on #9) | v0.3 |
-| 11 | WASM CI target | platform | small (0.5 d) | Medium | v0.3 |
-| 12 | `ScoringPolicy` trait + default Volfin/Cohen impl | architecture | medium (3–4 d) | Medium — extensibility | v0.3 |
-| 13 | `EmaPolicy` as `feature = "ema-scorer"` | algorithm | medium (3–4 d) | Medium — low-latency alt | v0.3 |
-| 14 | proptest: score monotonicity invariants | testing | small (1 d) | Medium | v0.3 |
-| 15 | Overlap detection (`Overlap` event variant) | algorithm | large (1 wk) | Low today, rising | later |
+| 1 | Replace `Instant` with `u64` ms; `std` feature for wrappers | platform | medium (1 wk) | **High** — no_std / WASM unlock | **shipped in v0.3.0** |
+| 2 | `#![no_std] + extern crate alloc`; hashbrown or BTreeMap fallback | platform | small (1 d) | High (depends on #1) | **shipped in v0.3.0** |
+| 3 | `ScoringPolicy` trait + default Volfin/Cohen impl | architecture | medium (3–4 d) | Medium — extensibility | **v0.3** |
+| 4 | `EmaPolicy` as `feature = "ema-scorer"` | algorithm | medium (3–4 d) | Medium — low-latency alt | **v0.3** |
+| 5 | proptest: score monotonicity + top-k length invariants | testing | small (1 d) | Medium | **v0.3** |
+| 6 | cargo-fuzz target for `record_level + tick` | testing | small (1 d) | Medium | **v0.3** |
+| 7 | WASM CI target (`wasm32-unknown-unknown`) | platform | small (0.5 d) | Medium (depends on #2) | **shipped in v0.3.0** |
+| 8 | Criterion CI regression tracking (gh-pages baselines) | testing | small (0.5 d) | Low | **v0.3** |
+| 9 | `SpeakerChange` as `#[non_exhaustive]`; `Overlap` event variant | algorithm | large (1 wk) | Low today, rising | later |
 
 ---
 

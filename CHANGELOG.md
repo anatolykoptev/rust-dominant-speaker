@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] — 2026-04-22
+
+### Breaking
+
+- **`add_peer`, `record_level`, and `tick` now accept `u64` milliseconds instead of `std::time::Instant`.**
+  Supply your own epoch-relative timestamp. In std environments:
+  ```rust
+  let t0 = std::time::Instant::now();
+  let now_ms = || t0.elapsed().as_millis() as u64;
+  detector.tick(now_ms());
+  ```
+  In WASM AudioWorklets: `performance.now() as u64`.
+
+### Added
+
+- **`no_std` support** (`#![no_std]` + `extern crate alloc`).
+  The crate now compiles to `wasm32-unknown-unknown` and embedded targets.
+  Runtime deps: `hashbrown` (HashMap) and `libm` (f64 math).
+- **`std` feature flag** (default on). Currently a no-op — reserved for future
+  `std`-specific optimizations. Downstream users who want `no_std` must set
+  `default-features = false`.
+- **WASM CI target** (`wasm32-unknown-unknown`) added to CI pipeline.
+
 ## [0.2.1] — 2026-04-22
 
 ### Fixed

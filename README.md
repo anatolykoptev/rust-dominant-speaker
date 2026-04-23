@@ -21,7 +21,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-rust-dominant-speaker = "0.2"
+rust-dominant-speaker = "0.3"
 ```
 
 ```rust
@@ -96,10 +96,23 @@ preventing brief spikes from triggering spurious speaker changes (hysteresis).
 Originally built as part of [OxPulse Chat](https://oxpulse.chat), published
 standalone for the broader Rust WebRTC ecosystem.
 
-## Known limitations
+## no_std / WASM
 
-- `std::time::Instant` is used for timing, which does not compile to WASM targets.
-  A clock-injection abstraction is planned for a future release.
+The crate is `#![no_std]` compatible. To use without the standard library:
+
+```toml
+[dependencies]
+rust-dominant-speaker = { version = "0.3", default-features = false }
+```
+
+Timestamps are caller-supplied `u64` milliseconds — no `Instant` dependency. In a browser AudioWorklet:
+
+```js
+// Rust side receives performance.now() as u64
+detector.tick(performance.now() as u64);
+```
+
+Runtime dependencies added for no_std: `hashbrown` (hash map) and `libm` (f64 math).
 
 ## License
 
