@@ -22,3 +22,10 @@ serde = ["dep:serde"]
 
 [dependencies]
 serde = { version = "1", default-features = false, features = ["derive"], optional = true }
+
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name = "tick"
+harness = false
