@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] — 2026-04-22
+
+### Fixed
+
+- **`binomial_coefficient(n, r)` returned 1 instead of 0 when `r > n`.**
+  Mathematically C(n, r) = 0 for r > n. The old loop never executed in that case,
+  silently returning 1 and producing wrong activity scores under exotic configs.
+- **`compute_activity_score` panicked on unsigned underflow when `v_l > n_r`.**
+  `(n_r - v_l as u32)` underflowed when a misconfigured `DetectorConfig` (e.g.
+  `n2 < 5` or `n3 < 10`) caused `compute_bigs` to produce a bucket count larger
+  than the configured window. Debug builds panicked; release builds silently
+  wrapped to ~4 billion. Fixed by clamping `v_l` to `n_r` before subtraction.
+
 ## [0.2.0] — 2026-04-22
 
 ### Breaking

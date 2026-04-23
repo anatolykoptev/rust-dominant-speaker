@@ -24,6 +24,9 @@ use super::{
 #[cfg(test)]
 mod tests;
 
+#[cfg(test)]
+mod adversarial_tests;
+
 /// Per-room dominant-speaker detector.
 ///
 /// Generic over `PeerId` — any type that is `Eq + Hash + Clone` works:

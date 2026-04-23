@@ -8,8 +8,14 @@ use super::MIN_ACTIVITY_SCORE;
 
 /// Compute the binomial coefficient C(n, r).
 ///
+/// Returns 0 when `r < 0` or `r > n` (mathematically correct).
+///
 /// Port of mediasoup C++ `ComputeBinomialCoefficient`.
 pub(crate) fn binomial_coefficient(n: i32, r: i32) -> i64 {
+    if r < 0 || r > n {
+        return 0;
+    }
+    // Use the larger of r and n-r to reduce loop iterations.
     let r = r.max(n - r);
     let (mut t, mut i, mut j): (i64, i64, i64) = (1, n as i64, 1);
     while i > r as i64 {
@@ -29,9 +35,12 @@ pub(crate) fn binomial_coefficient(n: i32, r: i32) -> i64 {
 ///
 /// Port of mediasoup C++ `ComputeActivityScore`.
 pub(crate) fn compute_activity_score(v_l: u8, n_r: u32, p: f64, lambda: f64) -> f64 {
+    // Clamp v_l to n_r: more active subbands than window size is impossible
+    // under correct usage, but a misconfigured n2/n3 can cause compute_bigs
+    // to produce v_l > n_r, leading to unsigned underflow in (n_r - v_l).
+    let v_l = (v_l as u32).min(n_r);
     let bc = binomial_coefficient(n_r as i32, v_l as i32).max(1) as f64;
-    let s = bc.ln() + (v_l as f64) * p.ln() + ((n_r - v_l as u32) as f64) * (1.0 - p).ln()
-        - lambda.ln()
+    let s = bc.ln() + (v_l as f64) * p.ln() + ((n_r - v_l) as f64) * (1.0 - p).ln() - lambda.ln()
         + lambda * (v_l as f64);
     s.max(MIN_ACTIVITY_SCORE)
 }
@@ -72,6 +81,38 @@ mod tests {
         // All-silent sample floors at MIN_ACTIVITY_SCORE.
         let s = compute_activity_score(0, N1, 0.5, 0.78);
         assert!((s - MIN_ACTIVITY_SCORE).abs() < 1e-20, "got {s}");
+    }
+
+    /// Regression: C(n, r) must be 0 when r > n, not 1.
+    /// The old code returned 1 because the loop never executed.
+    #[test]
+    fn binomial_r_greater_than_n_is_zero() {
+        assert_eq!(binomial_coefficient(5, 10), 0);
+        assert_eq!(binomial_coefficient(0, 1), 0);
+        assert_eq!(binomial_coefficient(13, 14), 0);
+    }
+
+    #[test]
+    fn binomial_negative_r_is_zero() {
+        assert_eq!(binomial_coefficient(5, -1), 0);
+    }
+
+    /// Regression: compute_activity_score must not panic when v_l > n_r.
+    /// The old code did unsigned subtraction (n_r - v_l as u32) which panics
+    /// in debug mode and wraps to ~4 billion in release mode.
+    #[test]
+    fn activity_score_v_l_greater_than_n_r_no_panic() {
+        // v_l=5, n_r=1 — was a panic in debug, wraparound in release.
+        let s = compute_activity_score(5, 1, 0.5, 24.0);
+        assert!(s.is_finite(), "score must be finite, got {s}");
+        assert!(s >= MIN_ACTIVITY_SCORE, "score must be >= MIN, got {s}");
+    }
+
+    #[test]
+    fn activity_score_v_l_equals_n_r_no_panic() {
+        // Edge: v_l == n_r — (n_r - v_l) == 0, must compute correctly.
+        let s = compute_activity_score(13, 13, 0.5, 0.78);
+        assert!(s.is_finite(), "got {s}");
     }
 
     #[test]
