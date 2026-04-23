@@ -203,7 +203,7 @@ pub const TICK_INTERVAL: std::time::Duration = std::time::Duration::from_millis(
 /// `ceil(128/13) = 10`. This function generalises it for custom configs.
 pub(crate) fn subunit_len_for(n1: u8) -> u8 {
     let n1 = n1.max(1) as u16; // guard against zero
-    ((128u16 + n1 - 1) / n1) as u8
+    128u16.div_ceil(n1) as u8
 }
 
 #[cfg(test)]

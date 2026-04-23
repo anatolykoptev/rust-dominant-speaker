@@ -123,9 +123,15 @@ fn speaker_change_has_nonnegative_margin() {
     d.add_peer(2, t0);
     feed(&mut d, 1, 5, t0, 2000);
     feed(&mut d, 2, 127, t0, 2000);
-    let change = d.tick(t0 + Duration::from_millis(2050)).expect("should elect");
+    let change = d
+        .tick(t0 + Duration::from_millis(2050))
+        .expect("should elect");
     assert_eq!(change.peer_id, 1);
-    assert!(change.c2_margin >= 0.0, "margin must be non-negative, got {}", change.c2_margin);
+    assert!(
+        change.c2_margin >= 0.0,
+        "margin must be non-negative, got {}",
+        change.c2_margin
+    );
 }
 
 #[test]
@@ -135,8 +141,8 @@ fn top_k_returns_loudest_first() {
     d.add_peer(1, t0);
     d.add_peer(2, t0);
     d.add_peer(3, t0);
-    feed(&mut d, 1, 5, t0, 2000);   // loudest
-    feed(&mut d, 2, 50, t0, 2000);  // moderate
+    feed(&mut d, 1, 5, t0, 2000); // loudest
+    feed(&mut d, 2, 50, t0, 2000); // moderate
     feed(&mut d, 3, 127, t0, 2000); // silent
     d.tick(t0 + Duration::from_millis(2050));
     // Second tick to ensure scores are fully settled.

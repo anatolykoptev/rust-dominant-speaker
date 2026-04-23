@@ -233,7 +233,10 @@ where
             (Some(n), Some(c)) if n == *c => None,
             (Some(n), _) => {
                 self.current_dominant = Some(n.clone());
-                Some(SpeakerChange { peer_id: n, c2_margin })
+                Some(SpeakerChange {
+                    peer_id: n,
+                    c2_margin,
+                })
             }
             _ => None,
         }
@@ -267,7 +270,11 @@ where
                 .unwrap_or(std::cmp::Ordering::Equal)
                 .then_with(|| b.2.cmp(&a.2))
         });
-        scored.into_iter().take(k).map(|(id, _, _)| id.clone()).collect()
+        scored
+            .into_iter()
+            .take(k)
+            .map(|(id, _, _)| id.clone())
+            .collect()
     }
 
     /// Return all peers with their current `(peer_id, immediate, medium, long)` scores.

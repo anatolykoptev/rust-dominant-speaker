@@ -21,12 +21,12 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-rust-dominant-speaker = "0.1"
+rust-dominant-speaker = "0.2"
 ```
 
 ```rust
 use std::time::{Duration, Instant};
-use dominant_speaker::{ActiveSpeakerDetector, TICK_INTERVAL};
+use dominant_speaker::{ActiveSpeakerDetector, SpeakerChange, TICK_INTERVAL};
 
 let mut detector = ActiveSpeakerDetector::new();
 let t0 = Instant::now();
@@ -43,13 +43,13 @@ while t < t0 + Duration::from_millis(2000) {
     t += Duration::from_millis(20);
 }
 
-// Call tick() on a timer. Returns Some(peer_id) only on speaker change.
-if let Some(dominant) = detector.tick(t0 + TICK_INTERVAL) {
-    println!("Dominant speaker changed to: peer {dominant}");
+// Call tick() on a timer. Returns Some(SpeakerChange) only on speaker change.
+if let Some(change) = detector.tick(t0 + TICK_INTERVAL) {
+    println!("Dominant speaker: peer {} (confidence: {:.2})", change.peer_id, change.c2_margin);
 }
 
 // Query current speaker without advancing the clock.
-assert_eq!(detector.current_dominant(), Some(1));
+assert_eq!(detector.current_dominant().copied(), Some(1));
 ```
 
 ## Algorithm
@@ -98,9 +98,8 @@ standalone for the broader Rust WebRTC ecosystem.
 
 ## Known limitations
 
-- `peer_id` is `u64`. Generic peer ID support (`PeerId: Eq + Ord + Copy`) is planned for 0.2.
 - `std::time::Instant` is used for timing, which does not compile to WASM targets.
-  A clock-injection abstraction is planned for 0.2.
+  A clock-injection abstraction is planned for a future release.
 
 ## License
 
