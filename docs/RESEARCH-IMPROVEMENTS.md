@@ -262,7 +262,11 @@ Criterion benchmarks: `tick_5_peers` (~2.2µs/iter), `tick_50_peers` (~10µs/ite
 
 ## Ecosystem comparison
 
-| Feature | rust-dominant-speaker v0.2.1 | mediasoup (C++) | Jitsi (Java) | LiveKit (Go) | Amazon Chime (TS) |
+### Server-side dominant speaker libraries
+
+These all solve the same problem: given a stream of RFC 6464 audio levels from N peers, select ONE dominant speaker with hysteresis to prevent rapid switching.
+
+| Feature | rust-dominant-speaker v0.3.0 | mediasoup (C++) | Jitsi (Java) | LiveKit (Go) | Amazon Chime (TS) |
 |---------|------------------------------|-----------------|--------------|--------------|-------------------|
 | Algorithm | Volfin & Cohen 2012 | Volfin & Cohen 2012 | Volfin & Cohen 2012 | EMA + percentile | Decay score |
 | Hysteresis (3-window) | ✅ | ✅ | ✅ | ❌ | ❌ |
@@ -275,15 +279,45 @@ Criterion benchmarks: `tick_5_peers` (~2.2µs/iter), `tick_50_peers` (~10µs/ite
 | no_std / WASM | ✅ | ❌ | ❌ | ❌ | ❌ |
 | Pluggable scorer | ❌ | ❌ | ❌ | ❌ | ✅ (Policy iface) |
 | Criterion benchmarks | ✅ | ❌ | ❌ | ✅ | — |
-| Adversarial tests | ✅ (29) | — | — | — | — |
+| Adversarial tests | ✅ (54) | — | — | — | — |
 | Zero runtime deps | ✅ | N/A | N/A | N/A | N/A |
 | License | MIT/Apache | ISC | Apache-2.0 | Apache-2.0 | Apache-2.0 |
 
 **Reading the table:**
 - We are feature-equivalent to mediasoup/Jitsi on the core algorithm. This is the correct baseline.
-- We now lead on: generic IDs, top-K, raw scores, confidence margin, serde, adversarial testing.
-- WASM/no_std is the next untapped advantage — no competitor offers a WASM-deployable impl.
-- Amazon Chime is the only one with a pluggable scorer — worth copying as a v0.3 design.
+- We lead on: generic IDs, top-K, raw scores, confidence margin, serde, adversarial testing, no_std/WASM.
+- no_std/WASM: we are the only WASM-deployable implementation in this class (shipped v0.3.0).
+- Amazon Chime is the only one with a pluggable scorer — worth copying as a v0.4 design.
+
+### Discord — a different architecture entirely
+
+Discord does **not** implement server-side dominant speaker detection. Their model is fundamentally different:
+
+**How Discord voice works:**
+
+1. **Client-side VAD.** The Discord desktop/mobile client runs Voice Activity Detection locally (via WebRTC's built-in VAD). When the local mic crosses the threshold, the client sends **Opcode 5 (Speaking)** to the Voice Gateway WebSocket with a bitmask:
+   - `Microphone` (1 << 0) — normal voice
+   - `Soundshare` (1 << 1) — desktop audio
+   - `Priority` (1 << 2) — priority speaker (mixes others quieter)
+
+2. **Server just relays.** The Voice Gateway broadcasts each Speaking event to all other clients in the channel. No audio analysis happens server-side.
+
+3. **All speakers shown simultaneously.** There is no "dominant speaker" concept. Discord shows animated green borders around every currently-speaking participant at once. This works because Discord's SFU always forwards all streams — there is no stream-selection problem to solve.
+
+4. **RFC 6464 audio levels in RTP** are present in Discord's RTP packets (for server-side mixing and level normalization), but Discord does **not** use them to run Volfin/Cohen or any scoring algorithm.
+
+5. **Stage Channels** (large audiences) use access-control, not algorithmic detection: listeners raise a hand, a moderator promotes them. No speaking detection involved.
+
+**Why this matters for library positioning:**
+
+| Problem | Discord | Jitsi / mediasoup / us |
+|---------|---------|------------------------|
+| Core question | "Is this peer making sound right now?" | "Who is THE dominant speaker?" |
+| Detection runs | On the client, before transmission | On the SFU/server, from RFC 6464 levels |
+| Output | Boolean speaking state per peer | Single winner + hysteresis |
+| Motivation | UI visualization (all streams always forwarded) | Stream selection (SFU must pick which stream to forward / pin video) |
+
+**Conclusion:** Discord solves a simpler, different problem. Our crate (and mediasoup/Jitsi) are relevant when the SFU has to make a forwarding or pinning decision. If you only need "is peer X currently loud?", you don't need Volfin/Cohen — you just threshold RFC 6464 levels directly.
 
 ---
 
@@ -329,5 +363,11 @@ Criterion benchmarks: `tick_5_peers` (~2.2µs/iter), `tick_50_peers` (~10µs/ite
 - Amazon Chime SDK JS — `aws/amazon-chime-sdk-js`, Apache-2.0.
   `src/activespeakerpolicy/DefaultActiveSpeakerPolicy.ts` — decay-based pluggable scorer.
   `src/activespeakerdetector/ActiveSpeakerDetector.ts` — ranked list emission pattern.
+- Amazon Chime SDK JS — `aws/amazon-chime-sdk-js`, Apache-2.0.
+  `src/activespeakerpolicy/DefaultActiveSpeakerPolicy.ts` — decay-based pluggable scorer.
+  `src/activespeakerdetector/ActiveSpeakerDetector.ts` — ranked list emission pattern.
 - Signal Android — `signalapp/Signal-Android`, AGPL-3.0.
   `AudioLevelMonitor.java` — client-side per-frame polling pattern for self-mute UX.
+- Discord Voice Protocol — proprietary, documented at `docs.discord.com/developers/topics/voice-connections`.
+  Uses client-side VAD + Opcode 5 (Speaking) self-reporting. No server-side dominant speaker algorithm.
+  RFC 6464 audio levels present in RTP packets but used for mixing only, not speaker selection.
