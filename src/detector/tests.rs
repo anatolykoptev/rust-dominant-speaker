@@ -3,15 +3,6 @@
 use super::*;
 use crate::{DetectorConfig, SpeakerChange};
 
-fn feed(d: &mut ActiveSpeakerDetector, p: u64, lvl: u8, from_ms: u64, ms: u64) {
-    let mut t = from_ms;
-    let end = from_ms + ms;
-    while t < end {
-        d.record_level(p, lvl, t);
-        t += 20;
-    }
-}
-
 /// Helper: assert tick returns a change for the given peer (ignores c2_margin).
 fn assert_speaker(change: Option<SpeakerChange>, expected_peer: u64) {
     assert_eq!(

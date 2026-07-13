@@ -297,3 +297,13 @@ where
         &mut self.speakers
     }
 }
+
+#[cfg(test)]
+fn feed(d: &mut ActiveSpeakerDetector, p: u64, lvl: u8, from_ms: u64, ms: u64) {
+    let mut t = from_ms;
+    let end = from_ms + ms;
+    while t < end {
+        d.record_level(p, lvl, t);
+        t += 20;
+    }
+}
