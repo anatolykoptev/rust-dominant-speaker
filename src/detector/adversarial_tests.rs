@@ -119,15 +119,6 @@ fn compute_bigs_empty_bigs_is_internal_only() {
 // 2. Detector invariants.
 // ---------------------------------------------------------------------------
 
-fn feed(d: &mut ActiveSpeakerDetector, p: u64, lvl: u8, from_ms: u64, ms: u64) {
-    let mut t = from_ms;
-    let end = from_ms + ms;
-    while t < end {
-        d.record_level(p, lvl, t);
-        t += 20;
-    }
-}
-
 /// If peer A is consistently louder than peer B over N ticks, top_k must
 /// always rank A above B — no transient inversion.
 #[test]
