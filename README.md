@@ -120,6 +120,17 @@ In a browser AudioWorklet, supply `performance.now() as u64` as the timestamp.
 
 Runtime dependencies added for `no_std`: `hashbrown` (hash map) and `libm` (f64 math).
 
+## Rust version
+
+The minimum supported Rust version is 1.75 (`rust-version` in `Cargo.toml`); CI
+tests it alongside stable and beta. Optional Cargo features: `std` (default) and
+`serde` (serialization of the detector configuration).
+
+## Development
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the checks to run and
+[docs/INDEX.md](docs/INDEX.md) for the other documents.
+
 ## License
 
 Dual-licensed under [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE) at your option.
