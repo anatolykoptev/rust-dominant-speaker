@@ -124,7 +124,7 @@ Runtime dependencies added for `no_std`: `hashbrown` (hash map) and `libm` (f64 
 
 The minimum supported Rust version is 1.75 (`rust-version` in `Cargo.toml`); CI
 tests it alongside stable and beta. Optional Cargo features: `std` (default) and
-`serde` (derives for the public data types).
+`serde` (serialization of the detector configuration).
 
 ## Development
 
